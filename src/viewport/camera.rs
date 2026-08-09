@@ -1,4 +1,4 @@
-use glam::{Mat4, Vec2, Vec3, Vec4Swizzles};
+use glam::{Mat4, Quat, Vec2, Vec3, Vec4Swizzles};
 
 /// Blender-style orbit camera: a focus point plus yaw/pitch/distance.
 pub struct Camera {
@@ -49,6 +49,22 @@ impl Camera {
         (far.xyz() / far.w - self.eye()).normalize()
     }
 
+    /// World point under the cursor for orbit/zoom: ray ∩ mesh, or the XZ
+    /// plane (y = 0) when nothing is hit.
+    pub fn pivot_under_cursor(&self, ndc: Vec2, aspect: f32) -> Vec3 {
+        let ray = self.cursor_ray(ndc, aspect);
+        let eye = self.eye();
+        // TODO: intersect displayed mesh when one exists; fall back to y = 0.
+        if ray.y.abs() < 1e-6 {
+            return Vec3::new(self.focus.x, 0.0, self.focus.z);
+        }
+        let t = -eye.y / ray.y;
+        if t < 0.0 {
+            return Vec3::new(self.focus.x, 0.0, self.focus.z);
+        }
+        eye + ray * t
+    }
+
     /// Dolly the camera along the cursor ray so the point under the cursor
     /// stays (approximately) fixed on screen while zooming.
     pub fn zoom_toward(&mut self, ndc: Vec2, scroll_delta: f32, aspect: f32) {
@@ -65,15 +81,64 @@ impl Camera {
         self.focus = new_eye + self.forward() * new_distance;
     }
 
-    /// Turntable orbit around the focus point, driven by a mouse drag delta
-    /// in screen pixels (positive y = dragging down).
-    pub fn orbit(&mut self, drag_delta: Vec2) {
+    /// Turntable orbit around `pivot`, driven by a mouse drag delta in screen
+    /// pixels (positive y = dragging down). Eye and focus both rotate so the
+    /// pivot stays fixed on screen (same idea as zoom-toward-cursor).
+    pub fn orbit_about(&mut self, pivot: Vec3, drag_delta: Vec2) {
         const SENSITIVITY: f32 = 0.008; // radians per pixel
 
-        self.yaw += drag_delta.x * SENSITIVITY;
-        // Dragging up tilts the view further above the scene.
-        self.pitch = (self.pitch + drag_delta.y * SENSITIVITY)
+        let dyaw = drag_delta.x * SENSITIVITY;
+        let target_pitch = (self.pitch + drag_delta.y * SENSITIVITY)
             .clamp(-89f32.to_radians(), 89f32.to_radians());
+        let dpitch = target_pitch - self.pitch;
+        if dyaw == 0.0 && dpitch == 0.0 {
+            return;
+        }
+
+        let eye = self.eye();
+        let mut eye_offset = eye - pivot;
+        let mut focus_offset = self.focus - pivot;
+
+        if dyaw != 0.0 {
+            let q = Quat::from_rotation_y(dyaw);
+            eye_offset = q * eye_offset;
+            focus_offset = q * focus_offset;
+        }
+
+        if dpitch != 0.0 {
+            let look = {
+                let d = focus_offset - eye_offset;
+                if d.length_squared() > 1e-12 {
+                    d.normalize()
+                } else {
+                    self.forward()
+                }
+            };
+            let right = {
+                let r = look.cross(Vec3::Y);
+                if r.length_squared() < 1e-12 {
+                    let yaw = self.yaw + dyaw;
+                    Vec3::new(yaw.cos(), 0.0, yaw.sin())
+                } else {
+                    r.normalize()
+                }
+            };
+            let q = Quat::from_axis_angle(right, dpitch);
+            eye_offset = q * eye_offset;
+            focus_offset = q * focus_offset;
+        }
+
+        let new_eye = pivot + eye_offset;
+        self.focus = pivot + focus_offset;
+        let dir = self.focus - new_eye;
+        self.distance = dir.length().max(0.5);
+        let forward = if dir.length_squared() > 1e-12 {
+            dir.normalize()
+        } else {
+            self.forward()
+        };
+        self.pitch = forward.y.clamp(-0.999999, 0.999999).asin();
+        self.yaw = forward.x.atan2(-forward.z);
     }
 
     /// Pan the focus point in the camera's horizontal plane.

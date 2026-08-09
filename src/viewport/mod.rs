@@ -3,7 +3,7 @@ pub mod grid;
 mod key_events;
 
 use eframe::egui;
-use glam::Vec2;
+use glam::Vec3;
 
 use camera::Camera;
 use grid::GridCallback;
@@ -11,12 +11,15 @@ use key_events::handle_input;
 
 pub struct Viewport {
     camera: Camera,
+    /// World pivot captured when a middle-mouse orbit drag starts.
+    orbit_pivot: Option<Vec3>,
 }
 
 impl Viewport {
     pub fn new() -> Self {
         Self {
             camera: Camera::default(),
+            orbit_pivot: None,
         }
     }
 
@@ -28,16 +31,14 @@ impl Viewport {
         }
         let aspect = rect.width() / rect.height();
 
-        if response.hovered() {
-            handle_input(&mut self.camera, ui, rect, aspect);
-        }
-
-        // Drag: orbit around the focus point. Handled outside the hover check
-        // so the rotation keeps tracking even if the cursor leaves the rect.
-        if response.dragged() {
-            let delta = response.drag_delta();
-            self.camera.orbit(Vec2::new(delta.x, delta.y));
-        }
+        handle_input(
+            &mut self.camera,
+            &mut self.orbit_pivot,
+            ui,
+            &response,
+            rect,
+            aspect,
+        );
 
         let view_proj = self.camera.view_proj(aspect);
         ui.painter()
