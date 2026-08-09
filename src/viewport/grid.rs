@@ -3,7 +3,23 @@ use eframe::egui_wgpu::{self, RenderState, wgpu};
 use eframe::wgpu::util::DeviceExt;
 use glam::Mat4;
 
-use crate::models::grid::{self, Vertex};
+/// Half-extent of the ground grid in world units (blocks).
+const GRID_HALF_EXTENT: i32 = 64;
+/// Every n-th line is drawn brighter, like Blender's major grid lines.
+const MAJOR_LINE_EVERY: i32 = 8;
+
+const MINOR_COLOR: [f32; 4] = [0.32, 0.32, 0.34, 1.0];
+const MAJOR_COLOR: [f32; 4] = [0.45, 0.45, 0.48, 1.0];
+const X_AXIS_COLOR: [f32; 4] = [0.85, 0.28, 0.30, 1.0];
+const Y_AXIS_COLOR: [f32; 4] = [0.42, 0.75, 0.25, 1.0];
+const Z_AXIS_COLOR: [f32; 4] = [0.25, 0.45, 0.90, 1.0];
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct Vertex {
+    position: [f32; 3],
+    color: [f32; 4],
+}
 
 /// GPU resources for the grid, stored in egui_wgpu's `CallbackResources`.
 pub struct GridRenderer {
@@ -54,7 +70,7 @@ impl GridRenderer {
             }],
         });
 
-        let vertices = grid::build_vertices();
+        let vertices = build_grid_vertices();
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("grid_vertices"),
             contents: bytemuck::cast_slice(&vertices),
@@ -160,4 +176,38 @@ impl egui_wgpu::CallbackTrait for GridCallback {
         render_pass.set_vertex_buffer(0, renderer.vertex_buffer.slice(..));
         render_pass.draw(0..renderer.vertex_count, 0..1);
     }
+}
+
+fn build_grid_vertices() -> Vec<Vertex> {
+    let n = GRID_HALF_EXTENT;
+    let extent = n as f32;
+    let mut vertices = Vec::new();
+
+    let mut line = |a: [f32; 3], b: [f32; 3], color: [f32; 4]| {
+        vertices.push(Vertex { position: a, color });
+        vertices.push(Vertex { position: b, color });
+    };
+
+    for i in -n..=n {
+        if i == 0 {
+            // The center lines are drawn as colored axes below.
+            continue;
+        }
+        let color = if i % MAJOR_LINE_EVERY == 0 {
+            MAJOR_COLOR
+        } else {
+            MINOR_COLOR
+        };
+        let t = i as f32;
+        // Lines parallel to Z, then parallel to X.
+        line([t, 0.0, -extent], [t, 0.0, extent], color);
+        line([-extent, 0.0, t], [extent, 0.0, t], color);
+    }
+
+    // World axes: X red, Y green, Z blue.
+    line([-extent, 0.0, 0.0], [extent, 0.0, 0.0], X_AXIS_COLOR);
+    line([0.0, -extent, 0.0], [0.0, extent, 0.0], Y_AXIS_COLOR);
+    line([0.0, 0.0, -extent], [0.0, 0.0, extent], Z_AXIS_COLOR);
+
+    vertices
 }
