@@ -3,6 +3,7 @@ use eframe::egui_wgpu::{self, RenderState, wgpu};
 use eframe::wgpu::util::DeviceExt;
 use glam::Mat4;
 
+use crate::config::CONFIG;
 use crate::models::grid::{self, Vertex};
 
 /// GPU resources for the grid, stored in egui_wgpu's `CallbackResources`.
@@ -54,7 +55,10 @@ impl GridRenderer {
             }],
         });
 
-        let vertices = grid::build_vertices();
+        let vertices = grid::build_vertices(
+            grid::default_bounds(),
+            CONFIG.major_line_block_spacing(),
+        );
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("grid_vertices"),
             contents: bytemuck::cast_slice(&vertices),
