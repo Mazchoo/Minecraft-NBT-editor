@@ -4,7 +4,7 @@ const GRID_HALF_EXTENT: i32 = 64;
 const MAJOR_LINE_EVERY: i32 = 8;
 
 const MINOR_COLOR: [f32; 4] = [0.45, 0.45, 0.48, 1.0];
-const MAJOR_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+const MAJOR_COLOR: [f32; 4] = [0.8, 0.8, 0.8, 0.8];
 const X_AXIS_COLOR: [f32; 4] = [0.85, 0.28, 0.30, 1.0];
 const Y_AXIS_COLOR: [f32; 4] = [0.42, 0.75, 0.25, 1.0];
 const Z_AXIS_COLOR: [f32; 4] = [0.25, 0.45, 0.90, 1.0];
