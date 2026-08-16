@@ -142,15 +142,3 @@ graph TD
 `egui_wgpu` runs callback `prepare()` (buffer uploads) and `paint()` (draw commands
 inside egui's render pass). The grid pipeline therefore renders directly into the
 egui pass, clipped to the viewport rect, sharing egui's depth-stencil configuration.
-
----
-
-## 4. Milestones
-
-1. **Grid viewport (this skeleton)**: panels + camera + reference grid with
-   zoom-to-cursor and WASD panning.
-2. **NBT loading**: parse `.nbt` into a sparse voxel grid, render blocks as flat-color
-   cubes with CPU face culling.
-3. **Assets**: resolve blockstate/model JSONs, build texture atlas, textured meshes.
-4. **Editing tools**: raycast picking, placement/deletion, shape tools, undo/redo,
-   NBT export.
