@@ -1,6 +1,7 @@
 use eframe::egui;
 
 use crate::ui::left_panel::{self, Tool};
+use crate::ui::ribbon;
 use crate::ui::right_panel;
 use crate::viewport::{Viewport, grid::GridRenderer};
 
@@ -30,6 +31,12 @@ impl App {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        egui::Panel::top("ribbon")
+            .resizable(false)
+            .show(ui, |ui| {
+                ribbon::show(ui);
+            });
+
         egui::Panel::left("tools_panel")
             .resizable(false)
             .exact_size(56.0)
