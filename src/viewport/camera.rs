@@ -1,4 +1,4 @@
-use glam::{Mat4, Quat, Vec2, Vec3, Vec4Swizzles};
+use glam::{Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 
 /// Blender-style orbit camera: a focus point plus yaw/pitch/distance.
 pub struct Camera {
@@ -49,9 +49,9 @@ impl Camera {
         (far.xyz() / far.w - self.eye()).normalize()
     }
 
-    /// World point under the cursor for orbit/zoom: ray ∩ mesh, or the XZ
+    /// World pivot under the cursor for orbit/zoom: ray ∩ mesh, or the XZ
     /// plane (y = 0) when nothing is hit.
-    pub fn pivot_under_cursor(&self, ndc: Vec2, aspect: f32) -> Vec3 {
+    pub fn get_orbit_point(&self, ndc: Vec2, aspect: f32) -> Vec3 {
         let ray = self.cursor_ray(ndc, aspect);
         let eye = self.eye();
         // TODO: intersect displayed mesh when one exists; fall back to y = 0.
@@ -82,63 +82,98 @@ impl Camera {
     }
 
     /// Turntable orbit around `pivot`, driven by a mouse drag delta in screen
-    /// pixels (positive y = dragging down). Eye and focus both rotate so the
-    /// pivot stays fixed on screen (same idea as zoom-toward-cursor).
-    pub fn orbit_about(&mut self, pivot: Vec3, drag_delta: Vec2) {
+    /// pixels (positive y = dragging down). After rotating, the camera is
+    /// translated so `pivot` stays under the current cursor (same idea as
+    /// zoom-toward-cursor).
+    pub fn orbit_about(&mut self, pivot: Vec3, drag_delta: Vec2, cursor_ndc: Vec2, aspect: f32) {
         const SENSITIVITY: f32 = 0.008; // radians per pixel
 
-        let dyaw = drag_delta.x * SENSITIVITY;
-        let target_pitch = (self.pitch + drag_delta.y * SENSITIVITY)
-            .clamp(-89f32.to_radians(), 89f32.to_radians());
-        let dpitch = target_pitch - self.pitch;
-        if dyaw == 0.0 && dpitch == 0.0 {
+        let drag_yaw = drag_delta.x * SENSITIVITY;
+        let drag_pitch = (self.pitch + drag_delta.y * SENSITIVITY)
+            .clamp(-89f32.to_radians(), 89f32.to_radians())
+            - self.pitch;
+
+        if drag_yaw != 0.0 || drag_pitch != 0.0 {
+            let eye_offset = self.eye() - pivot;
+            let focus_offset = self.focus - pivot;
+            let (eye_offset, focus_offset) =
+                Self::update_offsets_from_yaw(eye_offset, focus_offset, drag_yaw);
+            let (eye_offset, focus_offset) =
+                Self::update_offsets_from_pitch(eye_offset, focus_offset, drag_pitch);
+            self.recalculate_camera_from_offsets(pivot, eye_offset, focus_offset);
+        }
+
+        self.keep_point_at_ndc(pivot, cursor_ndc, aspect);
+    }
+
+    #[inline]
+    fn update_offsets_from_yaw(
+        eye_offset: Vec3,
+        focus_offset: Vec3,
+        drag_yaw: f32,
+    ) -> (Vec3, Vec3) {
+        if drag_yaw == 0.0 {
+            return (eye_offset, focus_offset);
+        }
+        Self::rotate_offsets(eye_offset, focus_offset, Quat::from_rotation_y(drag_yaw))
+    }
+
+    #[inline]
+    fn update_offsets_from_pitch(
+        eye_offset: Vec3,
+        focus_offset: Vec3,
+        drag_pitch: f32,
+    ) -> (Vec3, Vec3) {
+        if drag_pitch == 0.0 {
+            return (eye_offset, focus_offset);
+        }
+        let look = (focus_offset - eye_offset).normalize_or(Vec3::NEG_Z);
+        let right = look.cross(Vec3::Y).try_normalize().unwrap_or_else(|| {
+            Vec3::new(eye_offset.z, 0.0, -eye_offset.x).normalize_or(Vec3::X)
+        });
+        Self::rotate_offsets(
+            eye_offset,
+            focus_offset,
+            Quat::from_axis_angle(right, drag_pitch),
+        )
+    }
+
+    #[inline]
+    fn rotate_offsets(eye_offset: Vec3, focus_offset: Vec3, rotation: Quat) -> (Vec3, Vec3) {
+        (rotation * eye_offset, rotation * focus_offset)
+    }
+
+    #[inline]
+    fn recalculate_camera_from_offsets(
+        &mut self,
+        pivot: Vec3,
+        eye_offset: Vec3,
+        focus_offset: Vec3,
+    ) {
+        let focus = pivot + focus_offset;
+        let to_focus = focus - (pivot + eye_offset);
+        let distance = to_focus.length().max(0.5);
+        let forward = to_focus.try_normalize().unwrap_or(Vec3::NEG_Z);
+        self.focus = focus;
+        self.yaw = forward.x.atan2(-forward.z);
+        self.pitch = forward.y.clamp(-0.999999, 0.999999).asin();
+        self.distance = distance;
+    }
+
+    /// Translate the camera (orientation unchanged) so `point` projects to `ndc`.
+    fn keep_point_at_ndc(&mut self, point: Vec3, ndc: Vec2, aspect: f32) {
+        let view_proj = self.view_proj(aspect);
+        let clip = view_proj * point.extend(1.0);
+        if clip.w.abs() < 1e-8 {
             return;
         }
-
-        let eye = self.eye();
-        let mut eye_offset = eye - pivot;
-        let mut focus_offset = self.focus - pivot;
-
-        if dyaw != 0.0 {
-            let q = Quat::from_rotation_y(dyaw);
-            eye_offset = q * eye_offset;
-            focus_offset = q * focus_offset;
+        let depth = clip.z / clip.w;
+        let inv = view_proj.inverse();
+        let target = inv * Vec4::new(ndc.x, ndc.y, depth, 1.0);
+        if target.w.abs() < 1e-8 {
+            return;
         }
-
-        if dpitch != 0.0 {
-            let look = {
-                let d = focus_offset - eye_offset;
-                if d.length_squared() > 1e-12 {
-                    d.normalize()
-                } else {
-                    self.forward()
-                }
-            };
-            let right = {
-                let r = look.cross(Vec3::Y);
-                if r.length_squared() < 1e-12 {
-                    let yaw = self.yaw + dyaw;
-                    Vec3::new(yaw.cos(), 0.0, yaw.sin())
-                } else {
-                    r.normalize()
-                }
-            };
-            let q = Quat::from_axis_angle(right, dpitch);
-            eye_offset = q * eye_offset;
-            focus_offset = q * focus_offset;
-        }
-
-        let new_eye = pivot + eye_offset;
-        self.focus = pivot + focus_offset;
-        let dir = self.focus - new_eye;
-        self.distance = dir.length().max(0.5);
-        let forward = if dir.length_squared() > 1e-12 {
-            dir.normalize()
-        } else {
-            self.forward()
-        };
-        self.pitch = forward.y.clamp(-0.999999, 0.999999).asin();
-        self.yaw = forward.x.atan2(-forward.z);
+        self.focus += point - target.xyz() / target.w;
     }
 
     /// Pan the focus point in the camera's horizontal plane.

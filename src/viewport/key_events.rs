@@ -49,18 +49,19 @@ pub fn handle_input(
         }
     }
 
-    // Middle-mouse drag: orbit around the point under the cursor at press.
+    // Middle-mouse drag: orbit around the point under the cursor at press,
+    // keeping that world point under the mouse as it moves (like zoom).
     // Handled outside the hover check so tracking continues if the cursor
     // leaves the rect mid-drag.
     if response.drag_started_by(egui::PointerButton::Middle) {
         if let Some(pos) = response.interact_pointer_pos() {
-            *orbit_pivot = Some(camera.pivot_under_cursor(cursor_ndc(rect, pos), aspect));
+            *orbit_pivot = Some(camera.get_orbit_point(cursor_ndc(rect, pos), aspect));
         }
     }
     if response.dragged_by(egui::PointerButton::Middle) {
-        if let Some(pivot) = *orbit_pivot {
+        if let (Some(pivot), Some(pos)) = (*orbit_pivot, response.interact_pointer_pos()) {
             let delta = response.drag_delta();
-            camera.orbit_about(pivot, Vec2::new(delta.x, delta.y));
+            camera.orbit_about(pivot, Vec2::new(delta.x, delta.y), cursor_ndc(rect, pos), aspect);
         }
     } else {
         *orbit_pivot = None;
