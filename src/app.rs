@@ -31,11 +31,9 @@ impl App {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        egui::Panel::top("ribbon")
-            .resizable(false)
-            .show(ui, |ui| {
-                ribbon::show(ui);
-            });
+        egui::Panel::top("ribbon").resizable(false).show(ui, |ui| {
+            ribbon::show(ui);
+        });
 
         egui::Panel::left("tools_panel")
             .resizable(false)

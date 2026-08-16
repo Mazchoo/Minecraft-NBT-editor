@@ -55,10 +55,8 @@ impl GridRenderer {
             }],
         });
 
-        let vertices = grid::build_vertices(
-            grid::default_bounds(),
-            CONFIG.major_line_block_spacing(),
-        );
+        let vertices =
+            grid::build_vertices(grid::default_bounds(), CONFIG.major_line_block_spacing());
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("grid_vertices"),
             contents: bytemuck::cast_slice(&vertices),

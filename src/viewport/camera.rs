@@ -128,9 +128,10 @@ impl Camera {
             return (eye_offset, focus_offset);
         }
         let look = (focus_offset - eye_offset).normalize_or(Vec3::NEG_Z);
-        let right = look.cross(Vec3::Y).try_normalize().unwrap_or_else(|| {
-            Vec3::new(eye_offset.z, 0.0, -eye_offset.x).normalize_or(Vec3::X)
-        });
+        let right = look
+            .cross(Vec3::Y)
+            .try_normalize()
+            .unwrap_or_else(|| Vec3::new(eye_offset.z, 0.0, -eye_offset.x).normalize_or(Vec3::X));
         Self::rotate_offsets(
             eye_offset,
             focus_offset,

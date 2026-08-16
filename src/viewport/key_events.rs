@@ -61,7 +61,12 @@ pub fn handle_input(
     if response.dragged_by(egui::PointerButton::Middle) {
         if let (Some(pivot), Some(pos)) = (*orbit_pivot, response.interact_pointer_pos()) {
             let delta = response.drag_delta();
-            camera.orbit_about(pivot, Vec2::new(delta.x, delta.y), cursor_ndc(rect, pos), aspect);
+            camera.orbit_about(
+                pivot,
+                Vec2::new(delta.x, delta.y),
+                cursor_ndc(rect, pos),
+                aspect,
+            );
         }
     } else {
         *orbit_pivot = None;
