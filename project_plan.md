@@ -108,7 +108,121 @@ A structure schematic is stored as an NBT compound:
 
 ---
 
-## 3. High-Level Implementation Plan
+## 3. Texture Storage
+
+Block textures are extracted from a Minecraft client `.jar` to an on-disk cache, indexed by a
+JSON manifest, and read back on demand. Only the `.jar` is supported as an input source for now.
+
+### 3.1. Extraction
+
+The `.jar` is a zip archive. Entries are filtered on the path layout used by the client
+(see [`02_render_nbt_file.ipynb`](02_render_nbt_file.ipynb), section 6):
+
+```
+assets/{namespace}/textures/block/{file}.{png|bmp|jpg}
+```
+
+Each matching entry is written to `./texture_cache/` under its original file name. Entries with
+any other extension are skipped. Extraction is a one-off import step, not part of startup.
+
+### 3.2. Cache Layout
+
+```
+texture_cache/
+  textures.json        # manifest: key -> texture record
+  stone.png
+  glass.png
+  ...
+assets/
+  image-missing.png    # static fallback, shipped with the app
+```
+
+The dictionary key is the file stem (file name without extension, e.g. `glass`). Every key maps
+to exactly one file in `./texture_cache/`. `texture_cache/` is gitignored.
+
+### 3.3. Modules (`./src/textures/`)
+
+| File | Responsibility |
+| --- | --- |
+| `mod.rs` | Module declarations and re-exports. |
+| `texture.rs` | `Texture` record and `ImageFormat` enum. |
+| `library.rs` | `TextureLibrary`: the dictionary, manifest load/save, and queries. |
+| `jar.rs` | Jar scanning and extraction into `./texture_cache/`. |
+
+A `Texture` is a reference to a cached file plus its metadata. It holds no pixel data:
+
+```rust
+pub enum ImageFormat { Png, Bmp, Jpg }
+
+pub struct Texture {
+    /// File name within `./texture_cache/`, including extension.
+    file_name: String,
+    format: ImageFormat,
+    /// True if any pixel has an alpha value below 255.
+    has_alpha: bool,
+}
+```
+
+`has_alpha` is computed once at extraction time by decoding the image and scanning the alpha
+channel. Formats that carry no alpha channel (`bmp`, `jpg`) are recorded as `false` without a
+scan. The flag lets the renderer sort textures into opaque and alpha-discard draw batches
+without re-decoding.
+
+### 3.4. Manifest (`textures.json`)
+
+`TextureLibrary` serialises the whole dictionary to `./texture_cache/textures.json` via
+`serde_json` after an extraction run:
+
+```json
+{
+  "stone": { "file_name": "stone.png",  "format": "png", "has_alpha": false },
+  "glass": { "file_name": "glass.png",  "format": "png", "has_alpha": true }
+}
+```
+
+### 3.5. Startup
+
+1. The fallback image at the path given by `Config::missing_texture_path()`
+   (`./assets/image-missing.png`) is decoded and held for the lifetime of the process. If it
+   cannot be loaded, an error is logged; the application continues.
+2. If `textures.json` exists it is deserialised into the in-memory dictionary. If it is absent
+   or fails to parse, the dictionary starts empty and a jar import is required before textures
+   resolve.
+
+### 3.6. Query
+
+`TextureLibrary::get(key)` returns decoded image bytes:
+
+```mermaid
+graph TD
+    Q["get(key)"] --> D{"key in dictionary?"}
+    D -->|no| W["log warning"]
+    D -->|yes| R{"file readable and decodable?"}
+    R -->|no| W
+    R -->|yes| B["return image bytes"]
+    W --> M["return missing texture"]
+```
+
+Both failure paths — key absent from the dictionary, and file absent or unreadable on disk —
+log a warning and return the fallback image, so a caller always receives usable bytes. Decoded
+images are memoised in the library so repeated queries do not re-read from disk.
+
+### 3.7. Configuration
+
+`Config` gains the texture paths:
+
+*   `texture_cache_dir()` - `./texture_cache`
+*   `textures_manifest_path()` - `./texture_cache/textures.json`
+*   `missing_texture_path()` - `./assets/image-missing.png`
+
+### 3.8. Dependencies
+
+`zip` (archive reading), `image` (decoding png/bmp/jpg and alpha inspection), `serde` +
+`serde_json` (manifest), `log` (warnings and errors).
+
+---
+
+## 4. High-Level Implementation Plan
 
 The implementation is broken down into four key phases, moving from initial validation to final integration:
 
