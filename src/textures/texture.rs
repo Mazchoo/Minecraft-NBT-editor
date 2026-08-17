@@ -38,52 +38,9 @@ impl Texture {
     }
 }
 
-/// Scans decoded pixels for transparency. BMP and JPG are recorded as opaque without decoding.
-pub(crate) fn inspect_alpha(bytes: &[u8], format: ImageFormat) -> bool {
-    if !format.carries_alpha_channel() {
-        return false;
-    }
-    match image::load_from_memory(bytes) {
-        Ok(img) => img.to_rgba8().pixels().any(|pixel| pixel.0[3] < 255),
-        Err(err) => {
-            log::warn!("could not decode image to inspect alpha: {err}");
-            true
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use image::{Rgba, RgbaImage};
-    use std::io::Cursor;
-
-    fn encode(img: &RgbaImage, format: image::ImageFormat) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        img.write_to(&mut Cursor::new(&mut bytes), format)
-            .expect("encode test image");
-        bytes
-    }
-
-    #[test]
-    fn inspect_alpha_skips_bmp_and_jpg() {
-        assert!(!inspect_alpha(&[], ImageFormat::Bmp));
-        assert!(!inspect_alpha(&[], ImageFormat::Jpg));
-    }
-
-    #[test]
-    fn inspect_alpha_scans_png() {
-        let opaque = encode(
-            &RgbaImage::from_pixel(2, 2, Rgba([255, 0, 0, 255])),
-            image::ImageFormat::Png,
-        );
-        let transparent = encode(
-            &RgbaImage::from_pixel(2, 2, Rgba([255, 0, 0, 128])),
-            image::ImageFormat::Png,
-        );
-        assert!(!inspect_alpha(&opaque, ImageFormat::Png));
-        assert!(inspect_alpha(&transparent, ImageFormat::Png));
-    }
 
     #[test]
     fn texture_serializes_like_the_manifest() {

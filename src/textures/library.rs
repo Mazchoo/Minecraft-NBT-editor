@@ -9,7 +9,7 @@ use image::RgbaImage;
 
 use crate::config::Config;
 
-use super::jar::{JarError, extract_from_jar, write_manifest};
+use super::jar::{JarError, import_into_cache};
 use super::texture::Texture;
 
 /// In-memory dictionary of cached block textures, backed by the cache manifest.
@@ -52,12 +52,19 @@ impl TextureLibrary {
 
     /// Extracts block textures from a Minecraft client jar into the cache and rewrites the manifest.
     pub fn import_jar(&mut self, jar_path: &Path) -> Result<usize, JarError> {
-        let textures = extract_from_jar(jar_path, &self.cache_dir)?;
+        let textures = import_into_cache(jar_path, &self.cache_dir)?;
         let count = textures.len();
+        self.apply_import(textures);
+        Ok(count)
+    }
+
+    pub(crate) fn cache_dir(&self) -> &Path {
+        &self.cache_dir
+    }
+
+    pub(crate) fn apply_import(&mut self, textures: HashMap<String, Texture>) {
         self.textures = textures;
         self.decoded.borrow_mut().clear();
-        write_manifest(&self.cache_dir, &self.textures)?;
-        Ok(count)
     }
 
     /// Decoded RGBA pixels for `key`, or the missing texture if the key or file cannot be loaded.

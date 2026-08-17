@@ -1,10 +1,19 @@
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::mpsc;
+
 use eframe::egui;
 
-use crate::textures::TextureLibrary;
+use crate::textures::{JarError, Texture, TextureLibrary, import_into_cache};
 use crate::ui::left_panel::{self, Tool};
 use crate::ui::ribbon;
 use crate::ui::right_panel;
 use crate::viewport::{Viewport, grid::GridRenderer};
+
+struct PendingJarImport {
+    path: PathBuf,
+    rx: mpsc::Receiver<Result<HashMap<String, Texture>, JarError>>,
+}
 
 pub struct App {
     active_tool: Tool,
@@ -12,6 +21,7 @@ pub struct App {
     selected_block: Option<String>,
     viewport: Viewport,
     textures: TextureLibrary,
+    jar_import: Option<PendingJarImport>,
 }
 
 impl App {
@@ -28,14 +38,62 @@ impl App {
             selected_block: None,
             viewport: Viewport::new(),
             textures: TextureLibrary::load(),
+            jar_import: None,
         }
+    }
+
+    fn poll_jar_import(&mut self) {
+        let received = self
+            .jar_import
+            .as_ref()
+            .map(|pending| pending.rx.try_recv());
+        match received {
+            None | Some(Err(mpsc::TryRecvError::Empty)) => {}
+            Some(Err(mpsc::TryRecvError::Disconnected)) => {
+                self.jar_import = None;
+                log::error!("texture import thread exited unexpectedly");
+            }
+            Some(Ok(result)) => {
+                let path = self.jar_import.take().expect("pending import").path;
+                match result {
+                    Ok(textures) => {
+                        log::info!(
+                            "imported {} block textures from {}",
+                            textures.len(),
+                            path.display()
+                        );
+                        self.textures.apply_import(textures);
+                    }
+                    Err(err) => log::error!("failed to import jar {}: {err}", path.display()),
+                }
+            }
+        }
+    }
+
+    fn start_jar_import(&mut self, path: PathBuf) {
+        if self.jar_import.is_some() {
+            return;
+        }
+        let cache_dir = self.textures.cache_dir().to_path_buf();
+        let jar_path = path.clone();
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(import_into_cache(&jar_path, &cache_dir));
+        });
+        self.jar_import = Some(PendingJarImport { path, rx });
     }
 }
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.poll_jar_import();
+        let import_busy = self.jar_import.is_some();
+
         egui::Panel::top("ribbon").resizable(false).show(ui, |ui| {
-            ribbon::show(ui, &mut self.textures);
+            if let Some(path) = ribbon::show(ui, import_busy) {
+                self.start_jar_import(path);
+                ui.ctx().request_repaint();
+            }
         });
 
         egui::Panel::left("tools_panel")

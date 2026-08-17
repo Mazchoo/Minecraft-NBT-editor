@@ -1,12 +1,14 @@
-use std::collections::HashMap;
+use std::borrow::Cow;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 use crate::config::Config;
 
+use super::check_alpha::inspect_alpha;
 use super::image_format::ImageFormat;
-use super::texture::{Texture, inspect_alpha};
+use super::texture::Texture;
 
 /// Failure opening a jar, creating the cache, or writing the manifest.
 #[derive(Debug)]
@@ -68,6 +70,11 @@ pub fn extract_from_jar(
     let mut textures = HashMap::new();
 
     for index in 0..archive.len() {
+        let Some((file_name, format)) = archive.name_for_index(index).and_then(match_block_texture)
+        else {
+            continue;
+        };
+
         let mut entry = match archive.by_index(index) {
             Ok(entry) => entry,
             Err(err) => {
@@ -78,11 +85,8 @@ pub fn extract_from_jar(
         if !entry.is_file() {
             continue;
         }
-        let Some((file_name, format)) = match_block_texture(entry.name()) else {
-            continue;
-        };
 
-        let mut bytes = Vec::new();
+        let mut bytes = Vec::with_capacity(entry.size() as usize);
         if let Err(err) = entry.read_to_end(&mut bytes) {
             log::warn!("failed to read {file_name} from jar: {err}");
             continue;
@@ -100,12 +104,27 @@ pub fn extract_from_jar(
         textures.insert(key, Texture::new(file_name, format, has_alpha));
     }
 
+    remove_stale_cache_files(cache_dir, &textures);
+    Ok(textures)
+}
+
+/// Extracts textures, writes the manifest, and returns the new library map.
+pub(crate) fn import_into_cache(
+    jar_path: &Path,
+    cache_dir: &Path,
+) -> Result<HashMap<String, Texture>, JarError> {
+    let textures = extract_from_jar(jar_path, cache_dir)?;
+    write_manifest(cache_dir, &textures)?;
     Ok(textures)
 }
 
 /// Matches `assets/{namespace}/textures/block/{file}.{png|bmp|jpg}`.
 fn match_block_texture(entry_name: &str) -> Option<(String, ImageFormat)> {
-    let name = entry_name.replace('\\', "/");
+    let name = if entry_name.contains('\\') {
+        Cow::Owned(entry_name.replace('\\', "/"))
+    } else {
+        Cow::Borrowed(entry_name)
+    };
     let mut parts = name.split('/');
     let assets = parts.next()?;
     let namespace = parts.next()?;
@@ -124,6 +143,41 @@ fn match_block_texture(entry_name: &str) -> Option<(String, ImageFormat)> {
     let (_, ext) = file.rsplit_once('.')?;
     let format = ImageFormat::from_extension(ext)?;
     Some((file.to_owned(), format))
+}
+
+fn remove_stale_cache_files(cache_dir: &Path, textures: &HashMap<String, Texture>) {
+    let keep: HashSet<&str> = textures.values().map(Texture::file_name).collect();
+    let entries = match fs::read_dir(cache_dir) {
+        Ok(entries) => entries,
+        Err(err) => {
+            log::warn!(
+                "could not list cache directory {}: {err}",
+                cache_dir.display()
+            );
+            return;
+        }
+    };
+    for entry in entries {
+        let Ok(entry) = entry else {
+            continue;
+        };
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if name == Config::TEXTURES_MANIFEST_FILE || keep.contains(name) {
+            continue;
+        }
+        if let Err(err) = fs::remove_file(&path) {
+            log::warn!(
+                "failed to remove stale cache file {}: {err}",
+                path.display()
+            );
+        }
+    }
 }
 
 fn file_stem(file_name: &str) -> String {
@@ -185,6 +239,10 @@ mod tests {
         assert!(match_block_texture("assets/minecraft/textures/block/sub/glass.png").is_none());
         assert!(match_block_texture("assets/minecraft/textures/item/stick.png").is_none());
         assert!(match_block_texture("assets/minecraft/textures/block/glass.json").is_none());
+        let (name, format) =
+            match_block_texture("assets\\minecraft\\textures\\block\\glass.png").unwrap();
+        assert_eq!(name, "glass.png");
+        assert_eq!(format, ImageFormat::Png);
     }
 
     #[test]
@@ -216,6 +274,9 @@ mod tests {
             zip.finish().unwrap();
         }
 
+        fs::create_dir_all(&cache_dir).unwrap();
+        fs::write(cache_dir.join("leftover.png"), b"stale").unwrap();
+
         let textures = extract_from_jar(&jar_path, &cache_dir).unwrap();
         assert_eq!(textures.len(), 2);
         assert!(textures["glass"].has_alpha());
@@ -225,6 +286,7 @@ mod tests {
         assert!(cache_dir.join("stone.png").is_file());
         assert!(!cache_dir.join("stick.png").exists());
         assert!(!cache_dir.join("glass.json").exists());
+        assert!(!cache_dir.join("leftover.png").exists());
 
         fs::remove_dir_all(dir).ok();
     }
