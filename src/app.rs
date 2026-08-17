@@ -1,5 +1,6 @@
 use eframe::egui;
 
+use crate::textures::TextureLibrary;
 use crate::ui::left_panel::{self, Tool};
 use crate::ui::ribbon;
 use crate::ui::right_panel;
@@ -10,6 +11,7 @@ pub struct App {
     search_text: String,
     selected_block: Option<String>,
     viewport: Viewport,
+    textures: TextureLibrary,
 }
 
 impl App {
@@ -25,6 +27,7 @@ impl App {
             search_text: String::new(),
             selected_block: None,
             viewport: Viewport::new(),
+            textures: TextureLibrary::load(),
         }
     }
 }
@@ -32,7 +35,7 @@ impl App {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         egui::Panel::top("ribbon").resizable(false).show(ui, |ui| {
-            ribbon::show(ui);
+            ribbon::show(ui, &mut self.textures);
         });
 
         egui::Panel::left("tools_panel")

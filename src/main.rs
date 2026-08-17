@@ -3,12 +3,15 @@
 mod app;
 mod config;
 mod models;
+mod textures;
 mod ui;
 mod viewport;
 
 use eframe::egui;
 
 fn main() -> eframe::Result {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
     let native_options = eframe::NativeOptions {
         renderer: eframe::Renderer::Wgpu,
         depth_buffer: 32,
