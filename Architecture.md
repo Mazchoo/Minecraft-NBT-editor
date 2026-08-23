@@ -6,9 +6,6 @@ into the egui layout through `egui_wgpu` paint callbacks. The editing experience
 modeled after Blender: a central 3D viewport with smooth, inertia-free navigation,
 tools on the left, and data browsing/search on the right.
 
-See [project_plan.md](project_plan.md) for the phased implementation plan and the
-underlying NBT / asset data models.
-
 ---
 
 ## 1. UI Layout
