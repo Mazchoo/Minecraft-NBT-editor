@@ -115,8 +115,7 @@ JSON manifest, and read back on demand. Only the `.jar` is supported as an input
 
 ### 3.1. Extraction
 
-The `.jar` is a zip archive. Entries are filtered on the path layout used by the client
-(see [`02_render_nbt_file.ipynb`](02_render_nbt_file.ipynb), section 6):
+The `.jar` is a zip archive. Entries are filtered on the path layout used by the client:
 
 ```
 assets/{namespace}/textures/block/{file}.{png|bmp|jpg}
@@ -168,9 +167,9 @@ channel. Formats that carry no alpha channel (`bmp`, `jpg`) are recorded as `fal
 scan. The flag lets the renderer sort textures into opaque and alpha-discard draw batches
 without re-decoding.
 
-### 3.4. Manifest (`textures.json`)
+### 3.4. Manifest (`_textures.json`)
 
-`TextureLibrary` serialises the whole dictionary to `./texture_cache/textures.json` via
+`TextureLibrary` serialises the whole dictionary to `./texture_cache/_textures.json` via
 `serde_json` after an extraction run:
 
 ```json
@@ -185,7 +184,7 @@ without re-decoding.
 1. The fallback image at the path given by `Config::missing_texture_path()`
    (`./assets/image-missing.png`) is decoded and held for the lifetime of the process. If it
    cannot be loaded, an error is logged; the application continues.
-2. If `textures.json` exists it is deserialised into the in-memory dictionary. If it is absent
+2. If `_textures.json` exists it is deserialised into the in-memory dictionary. If it is absent
    or fails to parse, the dictionary starts empty and a jar import is required before textures
    resolve.
 
