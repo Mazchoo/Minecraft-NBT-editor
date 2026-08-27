@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::sync::mpsc;
+use std::time::Duration;
 
 use eframe::egui;
 
@@ -69,10 +70,31 @@ impl App {
                         );
                         self.textures.apply_import(imported.textures);
                         self.models.apply_import(imported.models);
+                        self.prune_selected_block();
                     }
                     Err(err) => log::error!("failed to import jar {}: {err}", path.display()),
                 }
             }
+        }
+    }
+
+    /// Reloads the block picker when `_models.cache.json` changes on disk.
+    /// Skipped while a jar import is in flight; that path already applies the new map.
+    fn poll_model_manifest(&mut self) {
+        if self.jar_import.is_some() {
+            return;
+        }
+        if self.models.reload_if_changed() {
+            log::info!("reloaded {} models from cache manifest", self.models.len());
+            self.prune_selected_block();
+        }
+    }
+
+    fn prune_selected_block(&mut self) {
+        if let Some(selected) = &self.selected_block
+            && self.models.get_record(selected).is_none()
+        {
+            self.selected_block = None;
         }
     }
 
@@ -102,6 +124,7 @@ impl App {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.poll_jar_import();
+        self.poll_model_manifest();
         let import_busy = self.jar_import.is_some();
 
         egui::Panel::top("ribbon").resizable(false).show(ui, |ui| {
@@ -121,7 +144,12 @@ impl eframe::App for App {
         egui::Panel::right("blocks_panel")
             .default_size(240.0)
             .show(ui, |ui| {
-                right_panel::show(ui, &mut self.search_text, &mut self.selected_block);
+                right_panel::show(
+                    ui,
+                    &mut self.search_text,
+                    &mut self.selected_block,
+                    self.models.names(),
+                );
             });
 
         egui::Panel::bottom("hotbar").show(ui, |ui| {
@@ -140,5 +168,7 @@ impl eframe::App for App {
             .show(ui, |ui| {
                 self.viewport.show(ui);
             });
+
+        ui.ctx().request_repaint_after(Duration::from_millis(500));
     }
 }

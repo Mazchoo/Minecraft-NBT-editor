@@ -4,6 +4,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use crate::config::Config;
 use crate::textures::JarError;
@@ -18,7 +19,12 @@ const PARENT_CHAIN_LIMIT: usize = 32;
 /// In-memory dictionary of cached block models, backed by the cache manifest.
 pub struct ModelLibrary {
     cache_dir: PathBuf,
+    manifest_path: PathBuf,
     models: HashMap<String, BlockModel>,
+    /// Sorted cache keys, rebuilt whenever the dictionary is replaced.
+    names: Vec<String>,
+    /// Last observed mtime of [`Self::manifest_path`]. `None` if the file is missing.
+    manifest_mtime: Option<SystemTime>,
     resolved: RefCell<HashMap<ResolveKey, Arc<ResolvedBlock>>>,
 }
 
@@ -72,11 +78,22 @@ pub struct ResolvedFace {
 impl ModelLibrary {
     /// Loads the cache manifest if present. Missing or invalid manifests start empty.
     pub fn load() -> Self {
-        let cache_dir = Config::model_cache_dir().to_path_buf();
-        let models = load_manifest(&Config::models_manifest_path());
+        Self::from_paths(
+            Config::model_cache_dir().to_path_buf(),
+            Config::models_manifest_path(),
+        )
+    }
+
+    fn from_paths(cache_dir: PathBuf, manifest_path: PathBuf) -> Self {
+        let models = load_manifest(&manifest_path);
+        let names = sorted_names(&models);
+        let manifest_mtime = file_mtime(&manifest_path);
         Self {
             cache_dir,
+            manifest_path,
             models,
+            names,
+            manifest_mtime,
             resolved: RefCell::new(HashMap::new()),
         }
     }
@@ -84,12 +101,8 @@ impl ModelLibrary {
     #[cfg(test)]
     pub(crate) fn from_cache_dir(cache_dir: impl Into<PathBuf>) -> Self {
         let cache_dir = cache_dir.into();
-        let models = load_manifest(&cache_dir.join(Config::MODELS_MANIFEST_FILE));
-        Self {
-            cache_dir,
-            models,
-            resolved: RefCell::new(HashMap::new()),
-        }
+        let manifest_path = cache_dir.join(Config::MODELS_MANIFEST_FILE);
+        Self::from_paths(cache_dir, manifest_path)
     }
 
     /// Extracts block models from a Minecraft client jar into the cache and rewrites the manifest.
@@ -106,16 +119,43 @@ impl ModelLibrary {
     }
 
     pub(crate) fn apply_import(&mut self, models: HashMap<String, BlockModel>) {
-        self.models = models;
-        self.resolved.borrow_mut().clear();
+        self.replace_models(models);
+        self.manifest_mtime = file_mtime(&self.manifest_path);
     }
 
-    #[allow(dead_code)]
+    /// Reloads the dictionary when `_models.cache.json` appears, disappears, or is rewritten.
+    ///
+    /// A parse or I/O error leaves the current dictionary in place so a partial write
+    /// (for example during jar import) does not empty the sidebar.
+    pub fn reload_if_changed(&mut self) -> bool {
+        let mtime = file_mtime(&self.manifest_path);
+        if mtime == self.manifest_mtime {
+            return false;
+        }
+        match try_load_manifest(&self.manifest_path) {
+            Ok(models) => {
+                self.manifest_mtime = mtime;
+                self.replace_models(models);
+                true
+            }
+            Err(ManifestError::NotFound) => {
+                self.manifest_mtime = None;
+                self.replace_models(HashMap::new());
+                true
+            }
+            Err(ManifestError::Failed) => false,
+        }
+    }
+
+    /// Sorted model stems from the cache, used as the block picker list.
+    pub fn names(&self) -> &[String] {
+        &self.names
+    }
+
     pub fn get_record(&self, key: &str) -> Option<&BlockModel> {
         self.models.get(key)
     }
 
-    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.models.len()
     }
@@ -123,6 +163,12 @@ impl ModelLibrary {
     #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.models.is_empty()
+    }
+
+    fn replace_models(&mut self, models: HashMap<String, BlockModel>) {
+        self.models = models;
+        self.names = sorted_names(&self.models);
+        self.resolved.borrow_mut().clear();
     }
 
     /// Resolves one NBT palette entry into geometry. Always returns a usable block;
@@ -331,21 +377,40 @@ fn fallback_cube(properties: BTreeMap<String, String>) -> ResolvedBlock {
     }
 }
 
-fn load_manifest(path: &Path) -> HashMap<String, BlockModel> {
+fn sorted_names(models: &HashMap<String, BlockModel>) -> Vec<String> {
+    let mut names: Vec<String> = models.keys().cloned().collect();
+    names.sort();
+    names
+}
+
+fn file_mtime(path: &Path) -> Option<SystemTime> {
+    fs::metadata(path).ok()?.modified().ok()
+}
+
+enum ManifestError {
+    NotFound,
+    Failed,
+}
+
+fn try_load_manifest(path: &Path) -> Result<HashMap<String, BlockModel>, ManifestError> {
     match fs::read_to_string(path) {
         Ok(text) => match serde_json::from_str(&text) {
-            Ok(map) => map,
+            Ok(map) => Ok(map),
             Err(err) => {
                 log::error!("failed to parse model manifest {}: {err}", path.display());
-                HashMap::new()
+                Err(ManifestError::Failed)
             }
         },
-        Err(err) if err.kind() == io::ErrorKind::NotFound => HashMap::new(),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Err(ManifestError::NotFound),
         Err(err) => {
             log::error!("failed to read model manifest {}: {err}", path.display());
-            HashMap::new()
+            Err(ManifestError::Failed)
         }
     }
+}
+
+fn load_manifest(path: &Path) -> HashMap<String, BlockModel> {
+    try_load_manifest(path).unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -426,6 +491,15 @@ mod tests {
         let library = ModelLibrary::from_cache_dir(&dir);
         assert_eq!(library.len(), 4);
         assert_eq!(
+            library.names(),
+            &[
+                "chest".to_owned(),
+                "cube".to_owned(),
+                "cube_all".to_owned(),
+                "stone".to_owned()
+            ]
+        );
+        assert_eq!(
             library.get_record("stone").unwrap().parent(),
             Some("cube_all")
         );
@@ -433,6 +507,45 @@ mod tests {
             library.get_record("cube_all").unwrap().elements_from(),
             Some("cube")
         );
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn reload_if_changed_picks_up_a_rewritten_manifest() {
+        let dir = temp_dir("model-library-reload");
+        write_model_cache(&dir);
+        let mut library = ModelLibrary::from_cache_dir(&dir);
+        assert!(!library.reload_if_changed());
+        assert!(library.names().contains(&"stone".to_owned()));
+
+        fs::write(
+            dir.join(Config::MODELS_MANIFEST_FILE),
+            r##"{
+                "dirt": {
+                    "file_name": "dirt.json",
+                    "parent": "cube_all",
+                    "textures": { "all": "dirt" },
+                    "elements_from": "cube"
+                }
+            }"##,
+        )
+        .unwrap();
+        let later = SystemTime::now() + std::time::Duration::from_secs(2);
+        fs::File::options()
+            .write(true)
+            .open(dir.join(Config::MODELS_MANIFEST_FILE))
+            .unwrap()
+            .set_modified(later)
+            .unwrap();
+
+        assert!(library.reload_if_changed());
+        assert_eq!(library.names(), &["dirt".to_owned()]);
+        assert!(!library.reload_if_changed());
+
+        fs::remove_file(dir.join(Config::MODELS_MANIFEST_FILE)).unwrap();
+        assert!(library.reload_if_changed());
+        assert!(library.names().is_empty());
+
         fs::remove_dir_all(dir).ok();
     }
 
