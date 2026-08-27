@@ -25,4 +25,6 @@ target
 
 /target
 /texture_cache
+_textures.cache.json
 /model_cache
+_models.cache.json
