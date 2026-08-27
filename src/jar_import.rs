@@ -48,10 +48,13 @@ pub fn import_from_jar(
         }
     })?;
 
-    fill_elements_from(&mut models, &has_elements);
-    remove_stale_textures(texture_cache_dir, &textures);
-    remove_stale_cache_files(model_cache_dir, &models);
+    // Textures are complete after the walk. Write that manifest before model
+    // parent-chain work and stale-file scans, which can take a long time.
     write_textures_manifest(textures_manifest, &textures)?;
+    remove_stale_textures(texture_cache_dir, &textures);
+
+    fill_elements_from(&mut models, &has_elements);
+    remove_stale_cache_files(model_cache_dir, &models);
     write_models_manifest(models_manifest, &models)?;
 
     Ok(ImportedAssets { textures, models })

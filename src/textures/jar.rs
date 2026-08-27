@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use crate::config::Config;
@@ -217,8 +217,10 @@ pub(crate) fn write_manifest(
     {
         fs::create_dir_all(parent)?;
     }
-    let file = File::create(path)?;
-    serde_json::to_writer_pretty(file, textures)?;
+    let mut file = File::create(path)?;
+    serde_json::to_writer_pretty(&mut file, textures)?;
+    file.flush()?;
+    file.sync_all()?;
     Ok(path.to_path_buf())
 }
 

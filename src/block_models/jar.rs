@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{self, File};
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use crate::config::Config;
@@ -222,9 +222,11 @@ pub(crate) fn write_manifest(
     {
         fs::create_dir_all(parent)?;
     }
-    let file = File::create(path)?;
+    let mut file = File::create(path)?;
     let ordered: BTreeMap<_, _> = models.iter().collect();
-    serde_json::to_writer_pretty(file, &ordered)?;
+    serde_json::to_writer_pretty(&mut file, &ordered)?;
+    file.flush()?;
+    file.sync_all()?;
     Ok(path.to_path_buf())
 }
 
