@@ -143,4 +143,74 @@ mod tests {
 
         fs::remove_dir_all(dir).ok();
     }
+
+    #[test]
+    fn import_from_jar_replaces_previous_cache() {
+        let dir = temp_dir("jar-import-replace");
+        let jar_path = dir.join("client.jar");
+        let texture_cache = dir.join("textures");
+        let model_cache = dir.join("models");
+        let textures_manifest = dir.join(crate::config::Config::TEXTURES_MANIFEST_FILE);
+        let models_manifest = dir.join(crate::config::Config::MODELS_MANIFEST_FILE);
+        let png = encode_png([10, 20, 30, 255]);
+
+        fs::create_dir_all(&texture_cache).unwrap();
+        fs::create_dir_all(&model_cache).unwrap();
+        fs::write(texture_cache.join("leftover.png"), b"stale").unwrap();
+        fs::write(model_cache.join("leftover.json"), b"stale").unwrap();
+        fs::write(
+            &textures_manifest,
+            r#"{"leftover":{"file_name":"leftover.png","format":"png","has_alpha":false}}"#,
+        )
+        .unwrap();
+        fs::write(
+            &models_manifest,
+            r#"{"leftover":{"file_name":"leftover.json","parent":null,"textures":{},"elements_from":null}}"#,
+        )
+        .unwrap();
+
+        {
+            let file = fs::File::create(&jar_path).unwrap();
+            let mut zip = ZipWriter::new(file);
+            let options =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+            zip.start_file("assets/minecraft/textures/block/stone.png", options)
+                .unwrap();
+            zip.write_all(&png).unwrap();
+            zip.start_file("assets/minecraft/models/block/stone.json", options)
+                .unwrap();
+            zip.write_all(
+                br#"{"parent":"minecraft:block/cube_all","textures":{"all":"minecraft:block/stone"}}"#,
+            )
+            .unwrap();
+            zip.finish().unwrap();
+        }
+
+        let imported = import_from_jar(
+            &jar_path,
+            &texture_cache,
+            &model_cache,
+            &textures_manifest,
+            &models_manifest,
+        )
+        .unwrap();
+        assert!(!imported.textures.contains_key("leftover"));
+        assert!(!imported.models.contains_key("leftover"));
+        assert!(!texture_cache.join("leftover.png").exists());
+        assert!(!model_cache.join("leftover.json").exists());
+        assert!(texture_cache.join("stone.png").is_file());
+        assert!(model_cache.join("stone.json").is_file());
+
+        let textures_json: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&textures_manifest).unwrap()).unwrap();
+        assert!(textures_json.get("leftover").is_none());
+        assert!(textures_json.get("stone").is_some());
+
+        let models_json: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&models_manifest).unwrap()).unwrap();
+        assert!(models_json.get("leftover").is_none());
+        assert!(models_json.get("stone").is_some());
+
+        fs::remove_dir_all(dir).ok();
+    }
 }

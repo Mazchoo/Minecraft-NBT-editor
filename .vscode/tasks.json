@@ -28,6 +28,25 @@
         "panel": "shared",
         "focus": false
       }
+    },
+    {
+      "label": "clear asset cache",
+      "type": "shell",
+      "windows": {
+        "command": "Remove-Item -LiteralPath '${workspaceFolder}\\texture_cache', '${workspaceFolder}\\model_cache', '${workspaceFolder}\\_textures.cache.json', '${workspaceFolder}\\_models.cache.json' -Recurse -Force -ErrorAction SilentlyContinue"
+      },
+      "linux": {
+        "command": "rm -rf '${workspaceFolder}/texture_cache' '${workspaceFolder}/model_cache' '${workspaceFolder}/_textures.cache.json' '${workspaceFolder}/_models.cache.json'"
+      },
+      "osx": {
+        "command": "rm -rf '${workspaceFolder}/texture_cache' '${workspaceFolder}/model_cache' '${workspaceFolder}/_textures.cache.json' '${workspaceFolder}/_models.cache.json'"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": false
+      }
     }
   ]
 }
