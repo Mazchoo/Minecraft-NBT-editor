@@ -36,15 +36,19 @@ struct ResolveKey {
 
 /// One palette entry after parent-chain merge and texture binding.
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // consumed by the mesh builder once textured drawing lands
+#[allow(dead_code)] // consumed by `Block::from_resolved` once the viewport draws blocks
 pub struct ResolvedBlock {
     pub properties: BTreeMap<String, String>,
+    /// Immediate parent model stem, used to classify [`crate::models::BlockType`].
+    pub parent_stem: Option<String>,
+    /// The chain's `particle` texture, if the merged dictionary has one.
+    pub particle_texture: Option<String>,
     pub parts: Vec<ResolvedPart>,
 }
 
 /// Geometry and orientation for one model that makes up a block.
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // consumed by the mesh builder once textured drawing lands
+#[allow(dead_code)] // consumed by `Block::from_resolved` once the viewport draws blocks
 pub struct ResolvedPart {
     /// Model stem this part resolved to.
     pub model: String,
@@ -55,7 +59,7 @@ pub struct ResolvedPart {
 
 /// An element whose face textures are already `TextureLibrary` keys (or empty).
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[allow(dead_code)] // consumed by `Block::from_resolved` once the viewport draws blocks
 pub struct ResolvedElement {
     pub from: [f32; 3],
     pub to: [f32; 3],
@@ -65,7 +69,7 @@ pub struct ResolvedElement {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[allow(dead_code)] // consumed by `Block::from_resolved` once the viewport draws blocks
 pub struct ResolvedFace {
     /// `TextureLibrary` key, or `None` if the slot did not resolve.
     pub texture: Option<String>,
@@ -173,7 +177,7 @@ impl ModelLibrary {
 
     /// Resolves one NBT palette entry into geometry. Always returns a usable block;
     /// unknown names and broken chains fall back to a full cube with a missing texture.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // consumed by `Block::from_resolved` once the viewport draws blocks
     pub fn resolve(&self, name: &str, properties: &BTreeMap<String, String>) -> Arc<ResolvedBlock> {
         let key = ResolveKey {
             name: name.to_owned(),
@@ -201,9 +205,14 @@ impl ModelLibrary {
             return fallback_cube(properties.clone());
         };
 
+        let particle_texture = merged.get("particle").cloned();
+        let parent_stem = record.parent().map(str::to_owned);
+
         let Some(elements_from) = record.elements_from() else {
             return ResolvedBlock {
                 properties: properties.clone(),
+                parent_stem,
+                particle_texture,
                 parts: vec![ResolvedPart {
                     model: stem,
                     elements: Vec::new(),
@@ -215,6 +224,8 @@ impl ModelLibrary {
         match self.read_and_bind_elements(elements_from, &merged) {
             Ok(elements) => ResolvedBlock {
                 properties: properties.clone(),
+                parent_stem,
+                particle_texture,
                 parts: vec![ResolvedPart {
                     model: stem,
                     elements,
@@ -363,6 +374,8 @@ fn fallback_cube(properties: BTreeMap<String, String>) -> ResolvedBlock {
     }
     ResolvedBlock {
         properties,
+        parent_stem: None,
+        particle_texture: None,
         parts: vec![ResolvedPart {
             model: "missing".into(),
             elements: vec![ResolvedElement {
@@ -562,6 +575,8 @@ mod tests {
         assert_eq!(faces["up"].texture.as_deref(), Some("stone"));
         assert_eq!(faces["down"].texture.as_deref(), Some("stone"));
         assert_eq!(faces["north"].texture.as_deref(), Some("stone"));
+        assert_eq!(resolved.parent_stem.as_deref(), Some("cube_all"));
+        assert_eq!(resolved.particle_texture.as_deref(), Some("stone"));
         assert!(Arc::ptr_eq(
             &resolved,
             &library.resolve("minecraft:stone", &empty)
@@ -578,6 +593,8 @@ mod tests {
         assert_eq!(resolved.parts.len(), 1);
         assert!(resolved.parts[0].block_entity);
         assert!(resolved.parts[0].elements.is_empty());
+        assert_eq!(resolved.particle_texture.as_deref(), Some("oak_planks"));
+        assert_eq!(resolved.parent_stem, None);
         fs::remove_dir_all(dir).ok();
     }
 

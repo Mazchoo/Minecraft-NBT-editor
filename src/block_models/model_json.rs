@@ -28,7 +28,7 @@ pub struct ModelElement {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[allow(dead_code)] // fields are read once the mesh builder consumes resolved elements
+#[allow(dead_code)] // fields are read by the mesh builder via `ElementRotation::from_model`
 pub struct ModelRotation {
     pub origin: [f32; 3],
     pub axis: String,

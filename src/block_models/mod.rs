@@ -9,5 +9,7 @@ pub(crate) use jar::{
 };
 pub use library::ModelLibrary;
 #[allow(unused_imports)]
-// public module API; used once the mesh builder consumes resolved models
+// public module API; consumed by `models` once the viewport draws blocks
 pub use library::{ResolvedBlock, ResolvedElement, ResolvedFace, ResolvedPart};
+#[allow(unused_imports)]
+pub use model_json::ModelRotation;
