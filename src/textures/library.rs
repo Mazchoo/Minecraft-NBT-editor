@@ -51,6 +51,7 @@ impl TextureLibrary {
     }
 
     /// Extracts block textures from a Minecraft client jar into the cache and rewrites the manifest.
+    #[allow(dead_code)] // used by tests; the app imports textures and models together
     pub fn import_jar(&mut self, jar_path: &Path) -> Result<usize, JarError> {
         let textures = import_into_cache(jar_path, &self.cache_dir)?;
         let count = textures.len();

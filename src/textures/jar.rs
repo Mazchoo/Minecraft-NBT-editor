@@ -56,25 +56,17 @@ impl From<serde_json::Error> for JarError {
     }
 }
 
-/// Extracts `assets/{namespace}/textures/block/*.{png,bmp,jpg}` into `cache_dir`.
-///
-/// Each matching entry is written under its original file name. The returned map is keyed
-/// by file stem (e.g. `glass`).
-pub fn extract_from_jar(
+/// Opens `jar_path` and yields each file entry's path and bytes.
+pub(crate) fn for_each_jar_file(
     jar_path: &Path,
-    cache_dir: &Path,
-) -> Result<HashMap<String, Texture>, JarError> {
-    fs::create_dir_all(cache_dir)?;
+    mut visit: impl FnMut(&str, Vec<u8>),
+) -> Result<(), JarError> {
     let file = File::open(jar_path)?;
     let mut archive = zip::ZipArchive::new(file)?;
-    let mut textures = HashMap::new();
-
     for index in 0..archive.len() {
-        let Some((file_name, format)) = archive.name_for_index(index).and_then(match_block_texture)
-        else {
+        let Some(name) = archive.name_for_index(index).map(str::to_owned) else {
             continue;
         };
-
         let mut entry = match archive.by_index(index) {
             Ok(entry) => entry,
             Err(err) => {
@@ -85,27 +77,54 @@ pub fn extract_from_jar(
         if !entry.is_file() {
             continue;
         }
-
         let mut bytes = Vec::with_capacity(entry.size() as usize);
         if let Err(err) = entry.read_to_end(&mut bytes) {
-            log::warn!("failed to read {file_name} from jar: {err}");
+            log::warn!("failed to read {name} from jar: {err}");
             continue;
         }
         drop(entry);
-
-        let dest = cache_dir.join(&file_name);
-        if let Err(err) = fs::write(&dest, &bytes) {
-            log::warn!("failed to write {}: {err}", dest.display());
-            continue;
-        }
-
-        let has_alpha = inspect_alpha(&bytes, format);
-        let key = file_stem(&file_name);
-        textures.insert(key, Texture::new(file_name, format, has_alpha));
+        visit(&name, bytes);
     }
+    Ok(())
+}
 
+/// Extracts `assets/{namespace}/textures/block/*.{png,bmp,jpg}` into `cache_dir`.
+///
+/// Each matching entry is written under its original file name. The returned map is keyed
+/// by file stem (e.g. `glass`).
+pub fn extract_from_jar(
+    jar_path: &Path,
+    cache_dir: &Path,
+) -> Result<HashMap<String, Texture>, JarError> {
+    fs::create_dir_all(cache_dir)?;
+    let mut textures = HashMap::new();
+    for_each_jar_file(jar_path, |name, bytes| {
+        let Some((file_name, format)) = match_block_texture(name) else {
+            return;
+        };
+        if let Some((key, texture)) = ingest_texture(cache_dir, file_name, format, &bytes) {
+            textures.insert(key, texture);
+        }
+    })?;
     remove_stale_cache_files(cache_dir, &textures);
     Ok(textures)
+}
+
+/// Writes a matched texture into `cache_dir` and returns `(stem, record)`.
+pub(crate) fn ingest_texture(
+    cache_dir: &Path,
+    file_name: String,
+    format: ImageFormat,
+    bytes: &[u8],
+) -> Option<(String, Texture)> {
+    let dest = cache_dir.join(&file_name);
+    if let Err(err) = fs::write(&dest, bytes) {
+        log::warn!("failed to write {}: {err}", dest.display());
+        return None;
+    }
+    let has_alpha = inspect_alpha(bytes, format);
+    let key = file_stem(&file_name);
+    Some((key, Texture::new(file_name, format, has_alpha)))
 }
 
 /// Extracts textures, writes the manifest, and returns the new library map.
@@ -114,12 +133,12 @@ pub(crate) fn import_into_cache(
     cache_dir: &Path,
 ) -> Result<HashMap<String, Texture>, JarError> {
     let textures = extract_from_jar(jar_path, cache_dir)?;
-    write_manifest(cache_dir, &textures)?;
+    write_manifest(&cache_dir.join(Config::TEXTURES_MANIFEST_FILE), &textures)?;
     Ok(textures)
 }
 
 /// Matches `assets/{namespace}/textures/block/{file}.{png|bmp|jpg}`.
-fn match_block_texture(entry_name: &str) -> Option<(String, ImageFormat)> {
+pub(crate) fn match_block_texture(entry_name: &str) -> Option<(String, ImageFormat)> {
     let name = if entry_name.contains('\\') {
         Cow::Owned(entry_name.replace('\\', "/"))
     } else {
@@ -145,7 +164,7 @@ fn match_block_texture(entry_name: &str) -> Option<(String, ImageFormat)> {
     Some((file.to_owned(), format))
 }
 
-fn remove_stale_cache_files(cache_dir: &Path, textures: &HashMap<String, Texture>) {
+pub(crate) fn remove_stale_cache_files(cache_dir: &Path, textures: &HashMap<String, Texture>) {
     let keep: HashSet<&str> = textures.values().map(Texture::file_name).collect();
     let entries = match fs::read_dir(cache_dir) {
         Ok(entries) => entries,
@@ -190,14 +209,17 @@ fn file_stem(file_name: &str) -> String {
 }
 
 pub(crate) fn write_manifest(
-    cache_dir: &Path,
+    path: &Path,
     textures: &HashMap<String, Texture>,
 ) -> Result<PathBuf, JarError> {
-    fs::create_dir_all(cache_dir)?;
-    let path = cache_dir.join(Config::TEXTURES_MANIFEST_FILE);
-    let file = File::create(&path)?;
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent)?;
+    }
+    let file = File::create(path)?;
     serde_json::to_writer_pretty(file, textures)?;
-    Ok(path)
+    Ok(path.to_path_buf())
 }
 
 #[cfg(test)]

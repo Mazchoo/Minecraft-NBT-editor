@@ -128,8 +128,8 @@ any other extension are skipped. Extraction is a one-off import step, not part o
 ### 3.2. Cache Layout
 
 ```
+_textures.cache.json   # manifest: key -> texture record
 texture_cache/
-  _textures.json       # manifest: key -> texture record
   stone.png
   glass.png
   ...
@@ -138,7 +138,7 @@ assets/
 ```
 
 The dictionary key is the file stem (file name without extension, e.g. `glass`). Every key maps
-to exactly one file in `./texture_cache/`. `texture_cache/` is gitignored.
+to exactly one file in `./texture_cache/`. `texture_cache/` and `_textures.cache.json` are gitignored.
 
 ### 3.3. Modules (`./src/textures/`)
 
@@ -168,9 +168,9 @@ channel. Formats that carry no alpha channel (`bmp`, `jpg`) are recorded as `fal
 scan. The flag lets the renderer sort textures into opaque and alpha-discard draw batches
 without re-decoding.
 
-### 3.4. Manifest (`_textures.json`)
+### 3.4. Manifest (`_textures.cache.json`)
 
-`TextureLibrary` serialises the whole dictionary to `./texture_cache/_textures.json` via
+`TextureLibrary` serialises the whole dictionary to `./_textures.cache.json` via
 `serde_json` after an extraction run:
 
 ```json
@@ -185,7 +185,7 @@ without re-decoding.
 1. The fallback image at the path given by `Config::missing_texture_path()`
    (`./assets/image-missing.png`) is decoded and held for the lifetime of the process. If it
    cannot be loaded, an error is logged; the application continues.
-2. If `_textures.json` exists it is deserialised into the in-memory dictionary. If it is absent
+2. If `_textures.cache.json` exists it is deserialised into the in-memory dictionary. If it is absent
    or fails to parse, the dictionary starts empty and a jar import is required before textures
    resolve.
 
@@ -211,8 +211,9 @@ images are memoised in the library so repeated queries do not re-read from disk.
 
 `Config` gains the texture paths:
 
+*   `TEXTURES_MANIFEST_FILE` - `_textures.cache.json`
 *   `texture_cache_dir()` - `./texture_cache`
-*   `textures_manifest_path()` - `./texture_cache/_textures.json`
+*   `textures_manifest_path()` - `./_textures.cache.json`
 *   `missing_texture_path()` - `./assets/image-missing.png`
 
 ### 3.8. Dependencies
@@ -255,8 +256,8 @@ storage order.
 ### 4.2. Cache Layout
 
 ```
+_models.cache.json     # manifest: key -> model record
 model_cache/
-  _models.cache.json   # manifest: key -> model record
   cube_all.json
   cube_column.json
   quartz_pillar.json
@@ -265,7 +266,7 @@ model_cache/
 ```
 
 The dictionary key is the file stem (e.g. `quartz_pillar`). Every key maps to exactly one file in
-`./model_cache/`. `model_cache/` is gitignored.
+`./model_cache/`. `model_cache/` and `_models.cache.json` are gitignored.
 
 Models refer to other assets by full id — `minecraft:block/cube_column` for a parent,
 `minecraft:block/quartz_pillar_top` for a texture — always carrying a namespace and a `block/`
@@ -323,7 +324,7 @@ the same jar produces a byte-identical manifest.
 
 ### 4.4. Manifest (`_models.cache.json`)
 
-`ModelLibrary` serialises the whole dictionary to `./model_cache/_models.cache.json` via
+`ModelLibrary` serialises the whole dictionary to `./_models.cache.json` via
 `serde_json` after an extraction run:
 
 ```json
@@ -416,7 +417,7 @@ decoded images are.
 
 *   `MODELS_MANIFEST_FILE` - `_models.cache.json`
 *   `model_cache_dir()` - `./model_cache`
-*   `models_manifest_path()` - `./model_cache/_models.cache.json`
+*   `models_manifest_path()` - `./_models.cache.json`
 
 ### 4.8. Dependencies
 

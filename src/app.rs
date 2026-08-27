@@ -1,10 +1,12 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc;
 
 use eframe::egui;
 
-use crate::textures::{JarError, Texture, TextureLibrary, import_into_cache};
+use crate::block_models::ModelLibrary;
+use crate::config::Config;
+use crate::jar_import::{ImportedAssets, import_from_jar};
+use crate::textures::{JarError, TextureLibrary};
 use crate::ui::left_panel::{self, Tool};
 use crate::ui::ribbon;
 use crate::ui::right_panel;
@@ -12,7 +14,7 @@ use crate::viewport::{Viewport, grid::GridRenderer};
 
 struct PendingJarImport {
     path: PathBuf,
-    rx: mpsc::Receiver<Result<HashMap<String, Texture>, JarError>>,
+    rx: mpsc::Receiver<Result<ImportedAssets, JarError>>,
 }
 
 pub struct App {
@@ -21,6 +23,7 @@ pub struct App {
     selected_block: Option<String>,
     viewport: Viewport,
     textures: TextureLibrary,
+    models: ModelLibrary,
     jar_import: Option<PendingJarImport>,
 }
 
@@ -38,6 +41,7 @@ impl App {
             selected_block: None,
             viewport: Viewport::new(),
             textures: TextureLibrary::load(),
+            models: ModelLibrary::load(),
             jar_import: None,
         }
     }
@@ -51,18 +55,20 @@ impl App {
             None | Some(Err(mpsc::TryRecvError::Empty)) => {}
             Some(Err(mpsc::TryRecvError::Disconnected)) => {
                 self.jar_import = None;
-                log::error!("texture import thread exited unexpectedly");
+                log::error!("jar import thread exited unexpectedly");
             }
             Some(Ok(result)) => {
                 let path = self.jar_import.take().expect("pending import").path;
                 match result {
-                    Ok(textures) => {
+                    Ok(imported) => {
                         log::info!(
-                            "imported {} block textures from {}",
-                            textures.len(),
+                            "imported {} block textures and {} block models from {}",
+                            imported.textures.len(),
+                            imported.models.len(),
                             path.display()
                         );
-                        self.textures.apply_import(textures);
+                        self.textures.apply_import(imported.textures);
+                        self.models.apply_import(imported.models);
                     }
                     Err(err) => log::error!("failed to import jar {}: {err}", path.display()),
                 }
@@ -74,11 +80,20 @@ impl App {
         if self.jar_import.is_some() {
             return;
         }
-        let cache_dir = self.textures.cache_dir().to_path_buf();
+        let texture_cache = self.textures.cache_dir().to_path_buf();
+        let model_cache = self.models.cache_dir().to_path_buf();
+        let textures_manifest = Config::textures_manifest_path();
+        let models_manifest = Config::models_manifest_path();
         let jar_path = path.clone();
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
-            let _ = tx.send(import_into_cache(&jar_path, &cache_dir));
+            let _ = tx.send(import_from_jar(
+                &jar_path,
+                &texture_cache,
+                &model_cache,
+                &textures_manifest,
+                &models_manifest,
+            ));
         });
         self.jar_import = Some(PendingJarImport { path, rx });
     }

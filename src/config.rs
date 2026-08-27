@@ -9,8 +9,11 @@ pub struct Config {
 impl Config {
     const DEFAULT_MAJOR_LINE_BLOCK_SPACING: i32 = 8;
 
-    /// Manifest file name inside [`Self::texture_cache_dir`].
-    pub const TEXTURES_MANIFEST_FILE: &'static str = "_textures.json";
+    /// Manifest file name at the repository root.
+    pub const TEXTURES_MANIFEST_FILE: &'static str = "_textures.cache.json";
+
+    /// Manifest file name at the repository root.
+    pub const MODELS_MANIFEST_FILE: &'static str = "_models.cache.json";
 
     pub const fn new() -> Self {
         Self {
@@ -18,19 +21,29 @@ impl Config {
         }
     }
 
-    /// Directory that holds extracted block textures and the manifest.
+    /// Directory that holds extracted block textures.
     pub fn texture_cache_dir() -> &'static Path {
         Path::new("./texture_cache")
     }
 
     /// Manifest mapping texture keys to cached files.
     pub fn textures_manifest_path() -> PathBuf {
-        Self::texture_cache_dir().join(Self::TEXTURES_MANIFEST_FILE)
+        Path::new(".").join(Self::TEXTURES_MANIFEST_FILE)
     }
 
     /// Fallback image used when a texture key cannot be resolved.
     pub fn missing_texture_path() -> &'static Path {
         Path::new("./assets/image-missing.png")
+    }
+
+    /// Directory that holds extracted block model JSONs.
+    pub fn model_cache_dir() -> &'static Path {
+        Path::new("./model_cache")
+    }
+
+    /// Manifest mapping model keys to cached files.
+    pub fn models_manifest_path() -> PathBuf {
+        Path::new(".").join(Self::MODELS_MANIFEST_FILE)
     }
 
     /// Blocks between brighter major grid lines.

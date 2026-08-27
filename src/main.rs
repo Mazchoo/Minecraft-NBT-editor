@@ -1,7 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod block_models;
 mod config;
+mod jar_import;
 mod models;
 mod textures;
 mod ui;

@@ -22,7 +22,7 @@ pub fn show(ui: &mut egui::Ui, import_busy: bool) -> Option<PathBuf> {
         });
         if import_busy {
             ui.spinner();
-            ui.label("Importing textures…");
+            ui.label("Importing jar…");
             ui.ctx().request_repaint();
         }
     });
