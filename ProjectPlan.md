@@ -793,7 +793,33 @@ A block with geometry already draws through `Elements`, so this is only for addi
 
 ---
 
-## 6. High-Level Implementation Plan
+## 6. Block Placement
+
+Default placement puts a single block in its default position: the palette entry as selected, with
+no extra facing or axis derived from the click. The placement target is a face — a cell of the
+ground grid, or an exposed face of an existing block — and the new block occupies the empty cell
+adjacent to that face, on the outside of the hit.
+
+Later placement modes (oriented families, lines, cuboids, and other shapes) belong in further
+subsections here. This section currently covers only the single-block case.
+
+### 6.1. Single Block Placement
+
+Raycasting from the cursor (section 7, Phase 2) resolves the nearest hit to a face: either a ground
+grid cell or a face on an already-placed block. That face is the attachment surface.
+
+*   **Target highlight.** The hit face is highlighted while it is the placement target, including at
+    the moment of placement, so it is obvious which grid cell or block boundary the new block will
+    sit against.
+*   **Cell.** The new block occupies the empty neighbour on the outward side of the highlighted
+    face. A hit on the ground grid places at that cell; a hit on another block places in the cell
+    sharing that face.
+*   **Default state.** The placed block is the current palette selection in its default orientation.
+    Hit-face orientation, snapping, and multi-block shapes are out of scope for this subsection.
+
+---
+
+## 7. High-Level Implementation Plan
 
 The implementation is broken down into four key phases, moving from initial validation to final integration:
 
@@ -813,4 +839,4 @@ Port the rendering architecture to Rust.
 Build the user interface and implement editing tools.
 *   **egui Integration**: Render the wgpu canvas to an off-screen texture and embed it in egui.
 *   **Layout Panels**: Create the tool sidebars, search palette, block details window, and bottom hotbar.
-*   **Editor Commands**: Implement translation, rotation, deletion, selection, and procedural shape placement (lines, cuboids, cylinders).
+*   **Editor Commands**: Implement single-block default placement (section 6.1), translation, rotation, deletion, selection, and procedural shape placement (lines, cuboids, cylinders).
