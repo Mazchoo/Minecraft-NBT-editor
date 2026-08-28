@@ -68,6 +68,11 @@ impl TextureLibrary {
         self.decoded.borrow_mut().clear();
     }
 
+    /// Fallback image used when a texture key cannot be resolved.
+    pub fn missing_image(&self) -> Arc<RgbaImage> {
+        Arc::clone(&self.missing)
+    }
+
     /// Decoded RGBA pixels for `key`, or the missing texture if the key or file cannot be loaded.
     ///
     /// Successful and fallback results are memoised so repeated queries do not re-read disk.

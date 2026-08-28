@@ -3,7 +3,7 @@ use glam::{Vec2, Vec3};
 
 use super::camera::Camera;
 
-fn cursor_ndc(rect: egui::Rect, pos: egui::Pos2) -> Vec2 {
+pub(super) fn cursor_ndc(rect: egui::Rect, pos: egui::Pos2) -> Vec2 {
     Vec2::new(
         (pos.x - rect.left()) / rect.width() * 2.0 - 1.0,
         1.0 - (pos.y - rect.top()) / rect.height() * 2.0,

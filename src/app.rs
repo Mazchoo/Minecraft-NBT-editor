@@ -11,7 +11,10 @@ use crate::textures::{JarError, TextureLibrary};
 use crate::ui::left_panel::{self, Tool};
 use crate::ui::ribbon;
 use crate::ui::right_panel;
-use crate::viewport::{Viewport, grid::GridRenderer};
+use crate::viewport::{
+    Viewport, blocks::BlockRenderer, grid::GridRenderer, highlight::HighlightRenderer,
+};
+use crate::world::World;
 
 struct PendingJarImport {
     path: PathBuf,
@@ -23,6 +26,7 @@ pub struct App {
     search_text: String,
     selected_block: Option<String>,
     viewport: Viewport,
+    world: World,
     textures: TextureLibrary,
     models: ModelLibrary,
     jar_import: Option<PendingJarImport>,
@@ -34,14 +38,18 @@ impl App {
             .wgpu_render_state
             .as_ref()
             .expect("the wgpu renderer is required (NativeOptions::renderer)");
+        let textures = TextureLibrary::load();
         GridRenderer::init(render_state);
+        BlockRenderer::init(render_state, &textures);
+        HighlightRenderer::init(render_state);
 
         Self {
             active_tool: Tool::Select,
             search_text: String::new(),
             selected_block: None,
             viewport: Viewport::new(),
-            textures: TextureLibrary::load(),
+            world: World::new(),
+            textures,
             models: ModelLibrary::load(),
             jar_import: None,
         }
@@ -71,6 +79,7 @@ impl App {
                         self.textures.apply_import(imported.textures);
                         self.models.apply_import(imported.models);
                         self.prune_selected_block();
+                        self.world.mark_dirty();
                     }
                     Err(err) => log::error!("failed to import jar {}: {err}", path.display()),
                 }
@@ -87,6 +96,7 @@ impl App {
         if self.models.reload_if_changed() {
             log::info!("reloaded {} models from cache manifest", self.models.len());
             self.prune_selected_block();
+            self.world.mark_dirty();
         }
     }
 
@@ -166,7 +176,14 @@ impl eframe::App for App {
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(egui::Color32::from_rgb(24, 24, 27)))
             .show(ui, |ui| {
-                self.viewport.show(ui);
+                self.viewport.show(
+                    ui,
+                    &mut self.world,
+                    self.active_tool == Tool::Place,
+                    self.selected_block.as_deref(),
+                    &self.models,
+                    &self.textures,
+                );
             });
 
         ui.ctx().request_repaint_after(Duration::from_millis(500));

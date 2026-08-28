@@ -132,7 +132,6 @@ impl Face {
     }
 
     /// Neighbour cell offset in this direction.
-    #[allow(dead_code)] // used once placement raycasts resolve a hit face
     pub fn offset(self) -> glam::IVec3 {
         match self {
             Self::Down => glam::IVec3::NEG_Y,
@@ -142,6 +141,24 @@ impl Face {
             Self::West => glam::IVec3::NEG_X,
             Self::East => glam::IVec3::X,
         }
+    }
+
+    /// Four corners of this face of the unit cube at `origin`, shifted along the
+    /// outward normal by `outset` so a highlight sits just outside the surface.
+    pub fn world_quad(self, origin: glam::IVec3, outset: f32) -> [[f32; 3]; 4] {
+        let shift = origin.as_vec3() + self.offset().as_vec3() * outset;
+        let corners = FACE_CORNERS
+            .iter()
+            .find(|(face, _)| *face == self)
+            .expect("FACE_CORNERS includes every face")
+            .1;
+        std::array::from_fn(|i| {
+            [
+                shift.x + corners[i][0],
+                shift.y + corners[i][1],
+                shift.z + corners[i][2],
+            ]
+        })
     }
 
     /// Rotate this face the same way geometry is rotated (X then Y, 90° steps).
@@ -527,5 +544,7 @@ mod tests {
         assert_eq!(Face::North.name(), "north");
         assert_eq!(Face::from_name(Face::West.name()), Some(Face::West));
         assert_eq!(Face::East.offset(), glam::IVec3::X);
+        let quad = Face::Up.world_quad(glam::IVec3::ZERO, 0.0);
+        assert!(quad.iter().all(|p| (p[1] - 1.0).abs() < 1e-5));
     }
 }

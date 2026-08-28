@@ -43,7 +43,7 @@ impl Camera {
     }
 
     /// World-space ray direction from the eye through the given NDC cursor position.
-    fn cursor_ray(&self, ndc: Vec2, aspect: f32) -> Vec3 {
+    pub fn cursor_ray(&self, ndc: Vec2, aspect: f32) -> Vec3 {
         let inv = self.view_proj(aspect).inverse();
         let far = inv * glam::Vec4::new(ndc.x, ndc.y, 1.0, 1.0);
         (far.xyz() / far.w - self.eye()).normalize()

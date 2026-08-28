@@ -8,6 +8,7 @@ mod models;
 mod textures;
 mod ui;
 mod viewport;
+mod world;
 
 use eframe::egui;
 
