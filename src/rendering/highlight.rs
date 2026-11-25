@@ -2,13 +2,11 @@ use eframe::egui;
 use eframe::egui_wgpu::{self, RenderState, wgpu};
 use glam::Mat4;
 
+use crate::constants;
 use crate::models::Face;
-use crate::models::grid::Vertex;
 
-use super::raycast::FaceHit;
-
-const HIGHLIGHT_COLOR: [f32; 4] = [1.0, 0.92, 0.2, 0.42];
-const OUTSET: f32 = 0.008;
+use super::common::face_triangles;
+use super::grid_mesh::Vertex;
 
 /// GPU resources for the placement-target face overlay.
 pub struct HighlightRenderer {
@@ -25,7 +23,7 @@ impl HighlightRenderer {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("highlight_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/grid.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(constants::GRID_SHADER.into()),
         });
 
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -127,7 +125,8 @@ impl HighlightRenderer {
 
 pub struct HighlightCallback {
     pub view_proj: Mat4,
-    pub hit: Option<FaceHit>,
+    /// Cell and face to overlay, if any.
+    pub target: Option<(glam::IVec3, Face)>,
 }
 
 impl egui_wgpu::CallbackTrait for HighlightCallback {
@@ -147,9 +146,9 @@ impl egui_wgpu::CallbackTrait for HighlightCallback {
             0,
             bytemuck::cast_slice(&self.view_proj.to_cols_array()),
         );
-        match self.hit {
-            Some(hit) => {
-                let vertices = face_triangles(hit.face, hit.cell);
+        match self.target {
+            Some((cell, face)) => {
+                let vertices = face_triangles(face, cell);
                 queue.write_buffer(&renderer.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
                 renderer.vertex_count = vertices.len() as u32;
             }
@@ -175,13 +174,4 @@ impl egui_wgpu::CallbackTrait for HighlightCallback {
         render_pass.set_vertex_buffer(0, renderer.vertex_buffer.slice(..));
         render_pass.draw(0..renderer.vertex_count, 0..1);
     }
-}
-
-fn face_triangles(face: Face, cell: glam::IVec3) -> [Vertex; 6] {
-    let q = face.world_quad(cell, OUTSET);
-    let v = |p: [f32; 3]| Vertex {
-        position: p,
-        color: HIGHLIGHT_COLOR,
-    };
-    [v(q[0]), v(q[1]), v(q[2]), v(q[0]), v(q[2]), v(q[3])]
 }

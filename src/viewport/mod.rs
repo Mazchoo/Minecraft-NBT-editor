@@ -1,7 +1,4 @@
-pub mod blocks;
 pub mod camera;
-pub mod grid;
-pub mod highlight;
 mod key_events;
 pub mod raycast;
 
@@ -11,15 +8,13 @@ use eframe::egui;
 use glam::Vec3;
 
 use camera::Camera;
-use grid::GridCallback;
 use key_events::{cursor_ndc, handle_input};
 
 use crate::block_models::ModelLibrary;
+use crate::rendering::{self, Scene};
 use crate::textures::TextureLibrary;
 use crate::world::World;
 
-use blocks::{BlockCallback, build_gpu_mesh};
-use highlight::HighlightCallback;
 use raycast::FaceHit;
 
 pub struct Viewport {
@@ -76,24 +71,17 @@ impl Viewport {
 
         let mesh = world
             .take_dirty()
-            .then(|| Arc::new(build_gpu_mesh(world, models, textures)));
+            .then(|| Arc::new(rendering::build_gpu_mesh(world, models, textures)));
 
-        let view_proj = self.camera.view_proj(aspect);
-        ui.painter()
-            .add(eframe::egui_wgpu::Callback::new_paint_callback(
-                rect,
-                BlockCallback { view_proj, mesh },
-            ));
-        ui.painter()
-            .add(eframe::egui_wgpu::Callback::new_paint_callback(
-                rect,
-                GridCallback { view_proj },
-            ));
-        ui.painter()
-            .add(eframe::egui_wgpu::Callback::new_paint_callback(
-                rect,
-                HighlightCallback { view_proj, hit },
-            ));
+        rendering::paint(
+            ui.painter(),
+            rect,
+            Scene {
+                view_proj: self.camera.view_proj(aspect),
+                mesh,
+                highlight: hit.map(|hit| (hit.cell, hit.face)),
+            },
+        );
     }
 }
 

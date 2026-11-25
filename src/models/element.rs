@@ -39,7 +39,6 @@ pub struct ElementFace {
     texture: String,
     uv: [f32; 4],
     uv_rotation: u16,
-    #[allow(dead_code)] // neighbour culling (section 5.10) reads this later
     cullface: Option<Face>,
     tint_index: Option<u8>,
 }
@@ -192,7 +191,6 @@ impl ElementFace {
         self.uv_rotation
     }
 
-    #[allow(dead_code)] // neighbour culling (section 5.10) reads this later
     pub fn cullface(&self) -> Option<Face> {
         self.cullface
     }

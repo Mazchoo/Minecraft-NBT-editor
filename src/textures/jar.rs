@@ -4,8 +4,6 @@ use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
-use crate::config::Config;
-
 use super::check_alpha::inspect_alpha;
 use super::image_format::ImageFormat;
 use super::texture::Texture;
@@ -133,7 +131,10 @@ pub(crate) fn import_into_cache(
     cache_dir: &Path,
 ) -> Result<HashMap<String, Texture>, JarError> {
     let textures = extract_from_jar(jar_path, cache_dir)?;
-    write_manifest(&cache_dir.join(Config::TEXTURES_MANIFEST_FILE), &textures)?;
+    write_manifest(
+        &cache_dir.join(crate::constants::TEXTURES_MANIFEST_FILE),
+        &textures,
+    )?;
     Ok(textures)
 }
 
@@ -187,7 +188,7 @@ pub(crate) fn remove_stale_cache_files(cache_dir: &Path, textures: &HashMap<Stri
         let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
-        if name == Config::TEXTURES_MANIFEST_FILE || keep.contains(name) {
+        if name == crate::constants::TEXTURES_MANIFEST_FILE || keep.contains(name) {
             continue;
         }
         if let Err(err) = fs::remove_file(&path) {

@@ -87,10 +87,19 @@ src/
     left_panel.rs        # tool sidebar (tool enum + buttons)
     right_panel.rs       # block search field + block picker list
   viewport/
-    mod.rs               # viewport widget: input handling, paint callback dispatch
+    mod.rs               # viewport widget: input handling, hands a Scene to rendering
     camera.rs            # camera state, view/projection math, zoom + pan logic
-    grid.rs              # wgpu pipeline + vertex generation for grid and axes
+    raycast.rs           # cursor ray to block face picking
+  rendering/             # the only module that touches wgpu
+    mod.rs               # public surface: init, build_gpu_mesh, paint(Scene)
+    blocks.rs            # block pipeline, texture array, world -> GPU mesh
+    block_mesh.rs        # per-block face emission (vertices, UVs, shading)
+    visibility.rs        # face culling: occluding neighbours + sealed cavities
+    grid.rs              # grid pipeline
+    grid_mesh.rs         # grid and axis line vertices
+    highlight.rs         # placement-target face overlay pipeline
     shaders/
+      blocks.wgsl        # textured block vertex/fragment shader
       grid.wgsl          # line vertex/fragment shader (per-vertex color)
 ```
 
@@ -101,7 +110,6 @@ src/
   nbt/                   # fastnbt-based .nbt parsing and export (Phase 1)
   assets/                # blockstate/model JSON resolution, texture atlas (Phase 1)
   world/                 # sparse 3D voxel grid, palette, edit operations (Phase 1)
-  render/                # block mesh builder, CPU face culling, block pipeline (Phase 2)
   tools/                 # tool implementations: raycasting, placement, shapes (Phase 3)
 ```
 
@@ -116,7 +124,10 @@ graph TD
     App --> Right["ui/right_panel.rs"]
     App --> VP["viewport/mod.rs"]
     VP --> Cam["viewport/camera.rs"]
-    VP --> Grid["viewport/grid.rs"]
+    VP --> Render["rendering/mod.rs"]
+    Render --> Grid["rendering/grid.rs"]
+    Render --> Blocks["rendering/blocks.rs"]
+    Blocks --> Vis["rendering/visibility.rs"]
     Grid --> Shader["shaders/grid.wgsl"]
 ```
 
@@ -131,7 +142,7 @@ graph TD
 - **`viewport/camera.rs`** is pure math: focus point + yaw/pitch + distance,
   producing view and projection matrices, plus `zoom_toward(cursor_ray, amount)` and
   `pan(direction, dt)`.
-- **`viewport/grid.rs`** holds the wgpu resources (pipeline, vertex buffer, uniform
+- **`rendering/grid.rs`** holds the wgpu resources (pipeline, vertex buffer, uniform
   buffer) created once via the `egui_wgpu` renderer callback resources map, and
   records the draw call each frame.
 

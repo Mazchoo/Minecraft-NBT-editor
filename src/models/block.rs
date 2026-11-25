@@ -121,6 +121,37 @@ impl Face {
         self as usize
     }
 
+    /// This face's bit in a per-cell occlusion mask.
+    pub fn bit(self) -> u8 {
+        1 << self.index()
+    }
+
+    pub fn opposite(self) -> Self {
+        match self {
+            Self::Down => Self::Up,
+            Self::Up => Self::Down,
+            Self::North => Self::South,
+            Self::South => Self::North,
+            Self::West => Self::East,
+            Self::East => Self::West,
+        }
+    }
+
+    /// The world direction this model-space face points after `rotation`,
+    /// derived from the same transform the mesh applies to vertices so culling
+    /// always agrees with the emitted geometry.
+    pub(crate) fn after_geometry_rotation(self, rotation: StateRotation) -> Self {
+        if rotation.is_identity() {
+            return self;
+        }
+        let centre = Vec3::splat(8.0);
+        let normal = rotation.apply(centre + self.offset().as_vec3()) - centre;
+        Self::ALL
+            .into_iter()
+            .find(|face| face.offset().as_vec3().dot(normal) > 0.5)
+            .unwrap_or(self)
+    }
+
     /// Minecraft directional shading when the element has `shade: true`.
     pub fn shade(self) -> f32 {
         match self {
@@ -335,6 +366,49 @@ impl Block {
         self.opaque
     }
 
+    /// Sides of the cell this block hides completely, as [`Face::bit`] flags in
+    /// world directions: the side is spanned by a full 16x16 face whose texture
+    /// has no transparent pixels. `has_alpha` reports transparency per texture key.
+    pub fn occlusion_mask(&self, has_alpha: impl Fn(&str) -> bool) -> u8 {
+        let mut mask = 0;
+        match self.block_type {
+            BlockType::Invisible | BlockType::BlockEntity => {}
+            BlockType::Basic(_) => {
+                // Mirrors the fast path in the mesh builder: six unit-cube
+                // faces textured from the first element.
+                let Some(part) = self.parts.first() else {
+                    return 0;
+                };
+                for face in Face::ALL {
+                    let texture = part
+                        .elements
+                        .first()
+                        .and_then(|el| el.faces()[face.index()].as_ref())
+                        .map_or("", ElementFace::texture);
+                    if !has_alpha(texture) {
+                        mask |= face.bit();
+                    }
+                }
+            }
+            BlockType::Elements => {
+                for part in &self.parts {
+                    for element in &part.elements {
+                        for face in Face::ALL {
+                            if element_covers_face(element, face)
+                                && element.faces()[face.index()]
+                                    .as_ref()
+                                    .is_some_and(|f| !has_alpha(f.texture()))
+                            {
+                                mask |= face.after_geometry_rotation(part.rotation).bit();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        mask
+    }
+
     /// Distinct texture keys referenced by this block's faces (and particle, if any).
     pub fn texture_keys(&self) -> Vec<String> {
         let mut keys = BTreeMap::new();
@@ -441,7 +515,8 @@ fn compute_covers(block_type: BlockType, parts: &[BlockPart]) -> [bool; 6] {
     }
 }
 
-fn element_covers_face(element: &Element, face: Face) -> bool {
+/// True when `face` of an unrotated element spans the whole side of the cell.
+pub(crate) fn element_covers_face(element: &Element, face: Face) -> bool {
     if element.rotation().is_some() || element.faces()[face.index()].is_none() {
         return false;
     }

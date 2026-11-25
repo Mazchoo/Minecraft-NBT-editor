@@ -1,10 +1,8 @@
-#![allow(dead_code)] // consumed by the viewport once textured block drawing lands
-
 use glam::{IVec3, Vec3};
 
-use super::block::{Block, FACE_CORNERS, Face};
-use super::block_type::BlockType;
-use super::element::{Element, ElementFace, StateRotation};
+use crate::models::block::{Block, FACE_CORNERS, Face, element_covers_face};
+use crate::models::block_type::BlockType;
+use crate::models::element::{Element, ElementFace, StateRotation};
 
 /// GPU vertex for a block face corner.
 #[repr(C)]
@@ -30,23 +28,48 @@ impl BlockMesh {
     ///
     /// `layer_of` maps a `TextureLibrary` key to a texture-array layer. Unknown
     /// keys (including the empty missing-texture key) should return 0.
+    #[cfg(test)]
     pub fn place(&mut self, block: &Block, origin: IVec3, layer_of: impl Fn(&str) -> u32) {
+        self.place_culled(block, origin, layer_of, |_| true);
+    }
+
+    /// Like [`Self::place`], but skips every face `visible` rejects.
+    ///
+    /// `visible` receives the side of the cell a face lies on or is culled
+    /// against, in world directions, or `None` for a face strictly inside the
+    /// cell. `Visibility::face_visible` answers it for a whole structure.
+    pub fn place_culled(
+        &mut self,
+        block: &Block,
+        origin: IVec3,
+        layer_of: impl Fn(&str) -> u32,
+        visible: impl Fn(Option<Face>) -> bool,
+    ) {
         match block.block_type() {
             BlockType::Invisible => {}
-            BlockType::Basic(_) => emit_basic(self, block, origin, layer_of),
+            BlockType::Basic(_) => emit_basic(self, block, origin, layer_of, visible),
             BlockType::Elements | BlockType::BlockEntity => {
-                emit_parts(self, block, origin, layer_of);
+                emit_parts(self, block, origin, layer_of, visible);
             }
         }
     }
 }
 
-fn emit_basic(mesh: &mut BlockMesh, block: &Block, origin: IVec3, layer_of: impl Fn(&str) -> u32) {
+fn emit_basic(
+    mesh: &mut BlockMesh,
+    block: &Block,
+    origin: IVec3,
+    layer_of: impl Fn(&str) -> u32,
+    visible: impl Fn(Option<Face>) -> bool,
+) {
     let origin = origin.as_vec3();
     let Some(part) = block.parts().first() else {
         return;
     };
     for (face, corners) in FACE_CORNERS {
+        if !visible(Some(face)) {
+            continue;
+        }
         let texture = face_texture(part.elements(), face);
         let tint = face_tint(block, part.elements(), face);
         let shade = shade_factor(part.elements().first(), face);
@@ -56,7 +79,13 @@ fn emit_basic(mesh: &mut BlockMesh, block: &Block, origin: IVec3, layer_of: impl
     }
 }
 
-fn emit_parts(mesh: &mut BlockMesh, block: &Block, origin: IVec3, layer_of: impl Fn(&str) -> u32) {
+fn emit_parts(
+    mesh: &mut BlockMesh,
+    block: &Block,
+    origin: IVec3,
+    layer_of: impl Fn(&str) -> u32,
+    visible: impl Fn(Option<Face>) -> bool,
+) {
     let origin = origin.as_vec3();
     for part in block.parts() {
         for element in part.elements() {
@@ -68,11 +97,13 @@ fn emit_parts(mesh: &mut BlockMesh, block: &Block, origin: IVec3, layer_of: impl
                 part.uvlock(),
                 block,
                 &layer_of,
+                &visible,
             );
         }
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_element(
     mesh: &mut BlockMesh,
     element: &Element,
@@ -81,12 +112,22 @@ fn emit_element(
     uvlock: bool,
     block: &Block,
     layer_of: &impl Fn(&str) -> u32,
+    visible: &impl Fn(Option<Face>) -> bool,
 ) {
     for (face, unit_corners) in FACE_CORNERS {
         let Some(face_data) = element.faces()[face.index()].as_ref() else {
             continue;
         };
         if !element.face_has_area(face) {
+            continue;
+        }
+        // A face is tested against a neighbour when the model declares a
+        // cullface, or when it spans a whole side of the cell without one.
+        let toward = face_data
+            .cullface()
+            .or_else(|| element_covers_face(element, face).then_some(face))
+            .map(|dir| dir.after_geometry_rotation(state));
+        if !visible(toward) {
             continue;
         }
         let shade = if element.shade() { face.shade() } else { 1.0 };
@@ -215,7 +256,6 @@ mod tests {
     use glam::IVec3;
 
     use crate::block_models::ModelLibrary;
-    use crate::config::Config;
     use crate::models::block::Block;
     use crate::models::block_type::BlockType;
 
@@ -276,7 +316,7 @@ mod tests {
         )
         .unwrap();
         fs::write(
-            dir.join(Config::MODELS_MANIFEST_FILE),
+            dir.join(crate::constants::MODELS_MANIFEST_FILE),
             r##"{
                 "cube": {
                     "file_name": "cube.json",
@@ -415,6 +455,56 @@ mod tests {
             second.iter().all(|v| (1.0..=2.0).contains(&v.position[0])),
             "second block stays in x=[1,2]"
         );
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn place_culled_skips_rejected_faces() {
+        let (dir, library) = library();
+        let block = resolve_block(&library, "minecraft:stone", BTreeMap::new());
+        let mut mesh = BlockMesh::default();
+        mesh.place_culled(&block, IVec3::ZERO, |_| 0, |face| face != Some(Face::Up));
+        assert_eq!(mesh.vertices.len(), 20);
+        assert_eq!(mesh.indices.len(), 30);
+        assert!(
+            mesh.vertices
+                .chunks(4)
+                .all(|quad| quad.iter().any(|v| v.position[1] < 0.5)),
+            "no quad lies entirely on the top of the cell"
+        );
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn rotated_cube_culls_by_world_direction() {
+        let (dir, library) = library();
+        let mut properties = BTreeMap::new();
+        properties.insert("axis".into(), "x".into());
+        let block = resolve_block(&library, "minecraft:quartz_pillar", properties);
+        assert_eq!(block.occlusion_mask(|_| false), 0b11_1111);
+        assert_eq!(block.occlusion_mask(|_| true), 0);
+        let mut mesh = BlockMesh::default();
+        mesh.place_culled(&block, IVec3::ZERO, |_| 0, |face| face != Some(Face::East));
+        assert_eq!(mesh.vertices.len(), 20);
+        assert!(
+            mesh.vertices
+                .chunks(4)
+                .all(|quad| quad.iter().any(|v| v.position[0] < 0.5)),
+            "the quad on the east side of the cell is the one removed"
+        );
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn occlusion_mask_follows_shape_and_texture_alpha() {
+        let (dir, library) = library();
+        let stone = resolve_block(&library, "minecraft:stone", BTreeMap::new());
+        assert_eq!(stone.occlusion_mask(|_| false), 0b11_1111);
+        assert_eq!(stone.occlusion_mask(|key| key == "stone"), 0);
+        let cross = resolve_block(&library, "minecraft:cross", BTreeMap::new());
+        assert_eq!(cross.occlusion_mask(|_| false), 0);
+        let chest = resolve_block(&library, "minecraft:chest", BTreeMap::new());
+        assert_eq!(chest.occlusion_mask(|_| false), 0);
         fs::remove_dir_all(dir).ok();
     }
 

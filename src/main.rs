@@ -3,8 +3,10 @@
 mod app;
 mod block_models;
 mod config;
+mod constants;
 mod jar_import;
 mod models;
+mod rendering;
 mod textures;
 mod ui;
 mod viewport;

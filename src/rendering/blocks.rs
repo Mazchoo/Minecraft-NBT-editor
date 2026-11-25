@@ -8,11 +8,17 @@ use glam::Mat4;
 use image::RgbaImage;
 
 use crate::block_models::ModelLibrary;
-use crate::models::{Block, BlockMesh, BlockVertex};
+use crate::config::Config;
+use crate::constants;
+use crate::models::Block;
 use crate::textures::TextureLibrary;
 use crate::world::World;
 
-const TEXTURE_SIZE: u32 = 16;
+use super::block_mesh::{BlockMesh, BlockVertex};
+use super::visibility::Visibility;
+
+/// Pixels in one texture-array layer.
+const TEXELS: usize = (Config::TEXTURE_SIZE * Config::TEXTURE_SIZE) as usize;
 
 /// CPU-side mesh plus packed texture-array pixels, rebuilt when the world changes.
 #[derive(Debug, Clone)]
@@ -43,7 +49,7 @@ impl BlockRenderer {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("blocks_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/blocks.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(constants::BLOCKS_SHADER.into()),
         });
 
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -260,9 +266,19 @@ impl egui_wgpu::CallbackTrait for BlockCallback {
 }
 
 /// Builds a textured mesh for every occupied cell. Layer 0 is always the missing texture.
+///
+/// Only faces that can be seen from outside the structure are emitted: faces
+/// pressed against an occluding neighbour and faces lining sealed cavities are
+/// dropped (see [`Visibility`]).
 pub fn build_gpu_mesh(world: &World, models: &ModelLibrary, textures: &TextureLibrary) -> GpuMesh {
     let empty = BTreeMap::new();
-    let mut blocks: BTreeMap<String, Block> = BTreeMap::new();
+    let has_alpha = |key: &str| {
+        textures
+            .get_record(key)
+            .is_some_and(|texture| texture.has_alpha())
+    };
+    // Each distinct block with the sides of its cell it hides completely.
+    let mut blocks: BTreeMap<String, (Block, u8)> = BTreeMap::new();
     let mut keys: BTreeMap<String, u32> = BTreeMap::new();
     keys.insert(String::new(), 0);
     let mut next_layer = 1u32;
@@ -279,15 +295,27 @@ pub fn build_gpu_mesh(world: &World, models: &ModelLibrary, textures: &TextureLi
                 layer
             });
         }
-        blocks.insert(name.to_owned(), block);
+        let occlusion = block.occlusion_mask(has_alpha);
+        blocks.insert(name.to_owned(), (block, occlusion));
     }
+
+    let visibility = Visibility::compute(
+        world
+            .iter()
+            .filter_map(|(cell, name)| blocks.get(name).map(|(_, occlusion)| (cell, *occlusion))),
+    );
 
     let mut mesh = BlockMesh::default();
     for (cell, name) in world.iter() {
-        let Some(block) = blocks.get(name) else {
+        let Some((block, _)) = blocks.get(name) else {
             continue;
         };
-        mesh.place(block, cell, |key| keys.get(key).copied().unwrap_or(0));
+        mesh.place_culled(
+            block,
+            cell,
+            |key| keys.get(key).copied().unwrap_or(0),
+            |face| visibility.face_visible(cell, face),
+        );
     }
 
     let layer_count = next_layer.max(1);
@@ -314,8 +342,8 @@ fn create_texture_array(device: &wgpu::Device, layer_count: u32) -> wgpu::Textur
     device.create_texture(&wgpu::TextureDescriptor {
         label: Some("block_texture_array"),
         size: wgpu::Extent3d {
-            width: TEXTURE_SIZE,
-            height: TEXTURE_SIZE,
+            width: Config::TEXTURE_SIZE,
+            height: Config::TEXTURE_SIZE,
             depth_or_array_layers: layer_count.max(1),
         },
         mip_level_count: 1,
@@ -345,11 +373,11 @@ fn write_texture_array(
         wgpu::TexelCopyBufferLayout {
             offset: 0,
             bytes_per_row: Some(row_pitch),
-            rows_per_image: Some(TEXTURE_SIZE),
+            rows_per_image: Some(Config::TEXTURE_SIZE),
         },
         wgpu::Extent3d {
-            width: TEXTURE_SIZE,
-            height: TEXTURE_SIZE,
+            width: Config::TEXTURE_SIZE,
+            height: Config::TEXTURE_SIZE,
             depth_or_array_layers: layer_count.max(1),
         },
     );
@@ -390,15 +418,15 @@ fn make_bind_group(
 fn pack_layers(layers: &[Arc<RgbaImage>]) -> (Vec<u8>, u32) {
     let count = layers.len().max(1) as u32;
     let row_pitch = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as usize;
-    let layer_size = row_pitch * TEXTURE_SIZE as usize;
+    let layer_size = row_pitch * Config::TEXTURE_SIZE as usize;
     let mut data = vec![0u8; layer_size * count as usize];
     for (i, img) in layers.iter().enumerate() {
-        let pixels = sample_16x16(img);
+        let pixels = sample_layer(img);
         let base = i * layer_size;
-        for y in 0..TEXTURE_SIZE as usize {
+        for y in 0..Config::TEXTURE_SIZE as usize {
             let dst = base + y * row_pitch;
-            for x in 0..TEXTURE_SIZE as usize {
-                let px = pixels[y * TEXTURE_SIZE as usize + x];
+            for x in 0..Config::TEXTURE_SIZE as usize {
+                let px = pixels[y * Config::TEXTURE_SIZE as usize + x];
                 let o = dst + x * 4;
                 data[o..o + 4].copy_from_slice(&px);
             }
@@ -407,16 +435,16 @@ fn pack_layers(layers: &[Arc<RgbaImage>]) -> (Vec<u8>, u32) {
     (data, count)
 }
 
-fn sample_16x16(img: &RgbaImage) -> [[u8; 4]; 256] {
+fn sample_layer(img: &RgbaImage) -> [[u8; 4]; TEXELS] {
     let w = img.width().max(1);
     let h = img.height().max(1);
     let frame_h = if h >= w { w } else { h };
-    let mut out = [[0u8; 4]; 256];
-    for y in 0..TEXTURE_SIZE {
-        for x in 0..TEXTURE_SIZE {
-            let sx = x * w / TEXTURE_SIZE;
-            let sy = y * frame_h / TEXTURE_SIZE;
-            out[(y * TEXTURE_SIZE + x) as usize] =
+    let mut out = [[0u8; 4]; TEXELS];
+    for y in 0..Config::TEXTURE_SIZE {
+        for x in 0..Config::TEXTURE_SIZE {
+            let sx = x * w / Config::TEXTURE_SIZE;
+            let sy = y * frame_h / Config::TEXTURE_SIZE;
+            out[(y * Config::TEXTURE_SIZE + x) as usize] =
                 img.get_pixel(sx.min(w - 1), sy.min(frame_h - 1)).0;
         }
     }

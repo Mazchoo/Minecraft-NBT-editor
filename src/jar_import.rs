@@ -96,8 +96,8 @@ mod tests {
         let jar_path = dir.join("client.jar");
         let texture_cache = dir.join("textures");
         let model_cache = dir.join("models");
-        let textures_manifest = dir.join(crate::config::Config::TEXTURES_MANIFEST_FILE);
-        let models_manifest = dir.join(crate::config::Config::MODELS_MANIFEST_FILE);
+        let textures_manifest = dir.join(crate::constants::TEXTURES_MANIFEST_FILE);
+        let models_manifest = dir.join(crate::constants::MODELS_MANIFEST_FILE);
         let png = encode_png([10, 20, 30, 255]);
 
         {
@@ -150,8 +150,8 @@ mod tests {
         let jar_path = dir.join("client.jar");
         let texture_cache = dir.join("textures");
         let model_cache = dir.join("models");
-        let textures_manifest = dir.join(crate::config::Config::TEXTURES_MANIFEST_FILE);
-        let models_manifest = dir.join(crate::config::Config::MODELS_MANIFEST_FILE);
+        let textures_manifest = dir.join(crate::constants::TEXTURES_MANIFEST_FILE);
+        let models_manifest = dir.join(crate::constants::MODELS_MANIFEST_FILE);
         let png = encode_png([10, 20, 30, 255]);
 
         fs::create_dir_all(&texture_cache).unwrap();

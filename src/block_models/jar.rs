@@ -4,7 +4,6 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-use crate::config::Config;
 use crate::textures::JarError;
 
 use super::block_model::BlockModel;
@@ -67,7 +66,10 @@ pub(crate) fn import_into_cache(
     cache_dir: &Path,
 ) -> Result<HashMap<String, BlockModel>, JarError> {
     let models = extract_from_jar(jar_path, cache_dir)?;
-    write_manifest(&cache_dir.join(Config::MODELS_MANIFEST_FILE), &models)?;
+    write_manifest(
+        &cache_dir.join(crate::constants::MODELS_MANIFEST_FILE),
+        &models,
+    )?;
     Ok(models)
 }
 
@@ -192,7 +194,7 @@ pub(crate) fn remove_stale_cache_files(cache_dir: &Path, models: &HashMap<String
         let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
-        if name == Config::MODELS_MANIFEST_FILE || keep.contains(name) {
+        if name == crate::constants::MODELS_MANIFEST_FILE || keep.contains(name) {
             continue;
         }
         if let Err(err) = fs::remove_file(&path) {

@@ -763,17 +763,24 @@ Two independent mechanisms, both needed:
 
 *   **Back-face culling** on the GPU, from consistent counter-clockwise winding. Free, and enough to
     make zero-thickness planes work as described in 5.4.
-*   **Neighbour culling** in the mesh builder. A face is a candidate only if it declares a
-    `cullface`; faces without one are always drawn. A candidate is skipped when the neighbour in
+*   **Neighbour culling** in the mesh builder. A face is tested against a neighbour when it declares
+    a `cullface`, or spans a whole side of its cell without one. It is skipped when the neighbour in
     that direction — rotated per 5.6 — fully covers the shared face and is opaque.
+*   **Cavity culling** in the mesh builder. Open space is flood-filled from outside the structure's
+    bounding box, passing between two cells only where neither covers the shared side. Faces that
+    look only into space the fill never reached — a sealed interior — are skipped, as is any
+    geometry sitting inside such a space. Opening the cavity, or sealing it with a transparent or
+    partial block, brings them back on the next rebuild.
+
+Both mesh-builder tests live in `rendering/visibility.rs` and run on every mesh rebuild.
 
 `BlockType` answers the neighbour question on behalf of the block: `covers_full_face(face)` and
 `is_opaque()`. `Basic` answers `true` and `!has_alpha` outright; `Elements` computes it once at
 resolve time by checking whether any element spans the full 0-16 square on that side with an opaque
 texture; `BlockEntity` and `Invisible` answer `false` so neighbours around them keep their faces.
 
-The first implementation may emit every face and rely on back-face culling alone. Neighbour culling
-is a pure optimisation and can land later without changing the geometry.
+Occlusion is answered per side by `Block::occlusion_mask`, which also requires the covering face's
+texture to have no transparent pixels, so glass and leaves never hide what is behind them.
 
 ### 5.11. Adding a Block Type
 

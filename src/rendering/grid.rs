@@ -4,7 +4,9 @@ use eframe::wgpu::util::DeviceExt;
 use glam::Mat4;
 
 use crate::config::CONFIG;
-use crate::models::grid::{self, Vertex};
+use crate::constants;
+
+use super::grid_mesh::{self as grid, Vertex};
 
 /// GPU resources for the grid, stored in egui_wgpu's `CallbackResources`.
 pub struct GridRenderer {
@@ -22,7 +24,7 @@ impl GridRenderer {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("grid_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/grid.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(constants::GRID_SHADER.into()),
         });
 
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {

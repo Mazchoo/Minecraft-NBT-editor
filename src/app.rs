@@ -7,13 +7,12 @@ use eframe::egui;
 use crate::block_models::ModelLibrary;
 use crate::config::Config;
 use crate::jar_import::{ImportedAssets, import_from_jar};
+use crate::rendering;
 use crate::textures::{JarError, TextureLibrary};
 use crate::ui::left_panel::{self, Tool};
 use crate::ui::ribbon;
 use crate::ui::right_panel;
-use crate::viewport::{
-    Viewport, blocks::BlockRenderer, grid::GridRenderer, highlight::HighlightRenderer,
-};
+use crate::viewport::Viewport;
 use crate::world::World;
 
 struct PendingJarImport {
@@ -34,14 +33,8 @@ pub struct App {
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let render_state = cc
-            .wgpu_render_state
-            .as_ref()
-            .expect("the wgpu renderer is required (NativeOptions::renderer)");
         let textures = TextureLibrary::load();
-        GridRenderer::init(render_state);
-        BlockRenderer::init(render_state, &textures);
-        HighlightRenderer::init(render_state);
+        rendering::init(cc, &textures);
 
         Self {
             active_tool: Tool::Select,

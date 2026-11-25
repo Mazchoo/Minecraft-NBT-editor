@@ -105,7 +105,7 @@ impl ModelLibrary {
     #[cfg(test)]
     pub(crate) fn from_cache_dir(cache_dir: impl Into<PathBuf>) -> Self {
         let cache_dir = cache_dir.into();
-        let manifest_path = cache_dir.join(Config::MODELS_MANIFEST_FILE);
+        let manifest_path = cache_dir.join(crate::constants::MODELS_MANIFEST_FILE);
         Self::from_paths(cache_dir, manifest_path)
     }
 
@@ -463,7 +463,7 @@ mod tests {
         )
         .unwrap();
         fs::write(
-            dir.join(Config::MODELS_MANIFEST_FILE),
+            dir.join(crate::constants::MODELS_MANIFEST_FILE),
             r##"{
                 "cube": {
                     "file_name": "cube.json",
@@ -532,7 +532,7 @@ mod tests {
         assert!(library.names().contains(&"stone".to_owned()));
 
         fs::write(
-            dir.join(Config::MODELS_MANIFEST_FILE),
+            dir.join(crate::constants::MODELS_MANIFEST_FILE),
             r##"{
                 "dirt": {
                     "file_name": "dirt.json",
@@ -546,7 +546,7 @@ mod tests {
         let later = SystemTime::now() + std::time::Duration::from_secs(2);
         fs::File::options()
             .write(true)
-            .open(dir.join(Config::MODELS_MANIFEST_FILE))
+            .open(dir.join(crate::constants::MODELS_MANIFEST_FILE))
             .unwrap()
             .set_modified(later)
             .unwrap();
@@ -555,7 +555,7 @@ mod tests {
         assert_eq!(library.names(), &["dirt".to_owned()]);
         assert!(!library.reload_if_changed());
 
-        fs::remove_file(dir.join(Config::MODELS_MANIFEST_FILE)).unwrap();
+        fs::remove_file(dir.join(crate::constants::MODELS_MANIFEST_FILE)).unwrap();
         assert!(library.reload_if_changed());
         assert!(library.names().is_empty());
 
@@ -642,7 +642,11 @@ mod tests {
         let mut library = ModelLibrary::from_cache_dir(&cache_dir);
         assert_eq!(library.import_jar(&jar_path).unwrap(), 1);
         assert_eq!(library.len(), 1);
-        assert!(cache_dir.join(Config::MODELS_MANIFEST_FILE).is_file());
+        assert!(
+            cache_dir
+                .join(crate::constants::MODELS_MANIFEST_FILE)
+                .is_file()
+        );
         assert_eq!(
             library.get_record("stone").unwrap().parent(),
             Some("cube_all")

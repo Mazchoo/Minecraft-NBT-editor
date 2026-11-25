@@ -2,11 +2,7 @@ use std::ops::RangeInclusive;
 
 use glam::IVec3;
 
-const MINOR_COLOR: [f32; 4] = [0.45, 0.45, 0.48, 1.0];
-const MAJOR_COLOR: [f32; 4] = [0.8, 0.8, 0.8, 1.0];
-const X_AXIS_COLOR: [f32; 4] = [0.85, 0.28, 0.30, 1.0];
-const Y_AXIS_COLOR: [f32; 4] = [0.42, 0.75, 0.25, 1.0];
-const Z_AXIS_COLOR: [f32; 4] = [0.25, 0.45, 0.90, 1.0];
+use crate::config::Config;
 
 /// Inclusive display bounds in block coordinates. Default empty selection is the origin.
 pub type Bounds = RangeInclusive<IVec3>;
@@ -82,9 +78,9 @@ pub fn build_vertices(bounds: Bounds, major_line_block_spacing: i32) -> Vec<Vert
             continue;
         }
         let color = if x.rem_euclid(spacing) == 0 {
-            MAJOR_COLOR
+            Config::GRID_MAJOR_COLOR
         } else {
-            MINOR_COLOR
+            Config::GRID_MINOR_COLOR
         };
         let t = x as f32;
         line([t, 0.0, min_z], [t, 0.0, max_z], color);
@@ -95,22 +91,30 @@ pub fn build_vertices(bounds: Bounds, major_line_block_spacing: i32) -> Vec<Vert
             continue;
         }
         let color = if z.rem_euclid(spacing) == 0 {
-            MAJOR_COLOR
+            Config::GRID_MAJOR_COLOR
         } else {
-            MINOR_COLOR
+            Config::GRID_MINOR_COLOR
         };
         let t = z as f32;
         line([min_x, 0.0, t], [max_x, 0.0, t], color);
     }
 
     // World axes: X red, Y green, Z blue — clipped to rounded display bounds.
-    line([min_x, 0.0, 0.0], [max_x, 0.0, 0.0], X_AXIS_COLOR);
+    line(
+        [min_x, 0.0, 0.0],
+        [max_x, 0.0, 0.0],
+        Config::GRID_X_AXIS_COLOR,
+    );
     line(
         [0.0, min.y as f32, 0.0],
         [0.0, max.y as f32, 0.0],
-        Y_AXIS_COLOR,
+        Config::GRID_Y_AXIS_COLOR,
     );
-    line([0.0, 0.0, min_z], [0.0, 0.0, max_z], Z_AXIS_COLOR);
+    line(
+        [0.0, 0.0, min_z],
+        [0.0, 0.0, max_z],
+        Config::GRID_Z_AXIS_COLOR,
+    );
 
     vertices
 }

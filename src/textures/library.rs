@@ -41,7 +41,7 @@ impl TextureLibrary {
     ) -> Self {
         let cache_dir = cache_dir.into();
         let missing = load_missing_texture(missing_path.as_ref());
-        let textures = load_manifest(&cache_dir.join(Config::TEXTURES_MANIFEST_FILE));
+        let textures = load_manifest(&cache_dir.join(crate::constants::TEXTURES_MANIFEST_FILE));
         Self {
             cache_dir,
             textures,
@@ -204,7 +204,7 @@ mod tests {
         write_png(&missing_path, [255, 0, 255, 255]);
         write_png(&dir.join("stone.png"), [80, 80, 80, 255]);
         fs::write(
-            dir.join(Config::TEXTURES_MANIFEST_FILE),
+            dir.join(crate::constants::TEXTURES_MANIFEST_FILE),
             r#"{
                 "stone": { "file_name": "stone.png", "format": "png", "has_alpha": false }
             }"#,
@@ -280,7 +280,11 @@ mod tests {
         let mut library = TextureLibrary::from_paths(&cache_dir, &missing_path);
         assert_eq!(library.import_jar(&jar_path).unwrap(), 1);
         assert_eq!(library.len(), 1);
-        assert!(cache_dir.join(Config::TEXTURES_MANIFEST_FILE).is_file());
+        assert!(
+            cache_dir
+                .join(crate::constants::TEXTURES_MANIFEST_FILE)
+                .is_file()
+        );
         assert_eq!(library.get("stone").get_pixel(0, 0).0, [10, 20, 30, 255]);
 
         fs::remove_dir_all(dir).ok();
