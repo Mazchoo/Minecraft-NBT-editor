@@ -1,5 +1,6 @@
 #![allow(dead_code)] // consumed by the viewport once textured block drawing lands
 
+use super::banner::BannerKind;
 use super::block::BasicBlock;
 use super::sign::SignKind;
 
@@ -13,6 +14,8 @@ pub enum BlockType {
     Elements,
     /// A sign: no model geometry, drawn from hand-built boxes.
     Sign(SignKind),
+    /// A banner: no model geometry, drawn from hand-built boxes.
+    Banner(BannerKind),
     /// No geometry anywhere in the model chain: drawn as an inset placeholder.
     BlockEntity,
     /// Deliberately draws nothing: air, barrier, structure void.
@@ -27,8 +30,11 @@ impl BlockType {
             return Self::Invisible;
         }
         if !has_geometry {
-            return match SignKind::from_name(name) {
-                Some(kind) => Self::Sign(kind),
+            if let Some(kind) = SignKind::from_name(name) {
+                return Self::Sign(kind);
+            }
+            return match BannerKind::from_name(name) {
+                Some(kind) => Self::Banner(kind),
                 None => Self::BlockEntity,
             };
         }
@@ -68,6 +74,10 @@ mod tests {
         assert_eq!(
             BlockType::classify("minecraft:oak_wall_sign", None, false),
             BlockType::Sign(SignKind::Wall)
+        );
+        assert_eq!(
+            BlockType::classify("minecraft:red_wall_banner", None, false),
+            BlockType::Banner(BannerKind::Wall)
         );
         assert_eq!(
             BlockType::classify("minecraft:stone", Some("cube_all"), true),

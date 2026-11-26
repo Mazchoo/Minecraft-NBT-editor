@@ -727,6 +727,12 @@ These are split by intent rather than lumped together:
     model file of their own; `resolve` maps them onto the standing sign's model, as their
     blockstate does upstream. Sign text is not drawn.
 
+*   `BlockType::Banner(BannerKind)` for banners, recognised by name (`*_banner`, `*_wall_banner`).
+    No coloured banner has a model file; `resolve` maps them all onto the shared `banner` model.
+    `models/banner.rs` builds the pole, crossbar and flag by hand. The wood uses the `particle`
+    texture and the flag uses `<colour>_wool`, since the real cloth texture is an entity texture
+    outside the block texture array. Banner patterns are not drawn.
+
 Drawing a recognisable placeholder matters more than it sounds: chests and signs are common enough
 in schematics that silently dropping them would leave visible holes in an otherwise correct render.
 

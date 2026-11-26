@@ -125,25 +125,33 @@ impl SignKind {
     /// south-facing sign to the orientation in `properties`.
     fn yaw(self, properties: &BTreeMap<String, String>) -> f32 {
         match self {
-            Self::Standing | Self::Hanging => {
-                // 0 = south, 4 = west, 8 = north, 12 = east.
-                let step = properties
-                    .get("rotation")
-                    .and_then(|value| value.parse::<u8>().ok())
-                    .unwrap_or(0)
-                    % 16;
-                -22.5 * f32::from(step)
-            }
-            Self::Wall | Self::WallHanging => {
-                match properties.get("facing").map(String::as_str) {
-                    Some("west") => -90.0,
-                    Some("east") => 90.0,
-                    Some("south") => 0.0,
-                    // Vanilla's default state faces north.
-                    _ => 180.0,
-                }
-            }
+            Self::Standing | Self::Hanging => rotation_yaw(properties),
+            Self::Wall | Self::WallHanging => facing_yaw(properties),
         }
+    }
+}
+
+/// Yaw, in [`ElementRotation`]'s convention, for the 16-step `rotation`
+/// property of free-standing signs and banners.
+pub(super) fn rotation_yaw(properties: &BTreeMap<String, String>) -> f32 {
+    // 0 = south, 4 = west, 8 = north, 12 = east.
+    let step = properties
+        .get("rotation")
+        .and_then(|value| value.parse::<u8>().ok())
+        .unwrap_or(0)
+        % 16;
+    -22.5 * f32::from(step)
+}
+
+/// Yaw, in [`ElementRotation`]'s convention, for the `facing` property of
+/// wall-mounted signs and banners.
+pub(super) fn facing_yaw(properties: &BTreeMap<String, String>) -> f32 {
+    match properties.get("facing").map(String::as_str) {
+        Some("west") => -90.0,
+        Some("east") => 90.0,
+        Some("south") => 0.0,
+        // Vanilla's default state faces north.
+        _ => 180.0,
     }
 }
 
@@ -182,7 +190,7 @@ fn placed_box(
 }
 
 /// A solid box textured at one texel per model unit from the texture's top-left.
-fn wood_box(
+pub(super) fn wood_box(
     centre: [f32; 2],
     half: [f32; 2],
     y0: f32,

@@ -48,7 +48,10 @@ impl BlockMesh {
         match block.block_type() {
             BlockType::Invisible => {}
             BlockType::Basic(_) => emit_basic(self, block, origin, layer_of, visible),
-            BlockType::Elements | BlockType::Sign(_) | BlockType::BlockEntity => {
+            BlockType::Elements
+            | BlockType::Sign(_)
+            | BlockType::Banner(_)
+            | BlockType::BlockEntity => {
                 emit_parts(self, block, origin, layer_of, visible);
             }
         }

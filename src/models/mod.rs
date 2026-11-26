@@ -1,3 +1,4 @@
+pub mod banner;
 pub mod block;
 pub mod block_type;
 pub mod element;

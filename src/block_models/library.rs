@@ -200,7 +200,8 @@ impl ModelLibrary {
         let stem = asset_stem(name);
         // Wall signs have no model of their own: upstream, their blockstate
         // points at the standing sign's model.
-        let stem = match wall_sign_model_stem(&stem) {
+        // Likewise every banner, of any colour, points at the one `banner` model.
+        let stem = match wall_sign_model_stem(&stem).or_else(|| banner_model_stem(&stem)) {
             Some(shared) if !self.models.contains_key(&stem) => shared,
             _ => stem,
         };
@@ -318,6 +319,11 @@ fn wall_sign_model_stem(stem: &str) -> Option<String> {
         stem.strip_suffix("_wall_sign")
             .map(|wood| format!("{wood}_sign"))
     }
+}
+
+/// Model stem shared by all banners: `red_banner` and `red_wall_banner` -> `banner`.
+fn banner_model_stem(stem: &str) -> Option<String> {
+    stem.ends_with("_banner").then(|| "banner".to_owned())
 }
 
 fn merge_chain(chain: &[&BlockModel]) -> BTreeMap<String, String> {
