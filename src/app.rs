@@ -37,7 +37,7 @@ impl App {
         rendering::init(cc, &textures);
 
         Self {
-            active_tool: Tool::Select,
+            active_tool: Tool::Place,
             search_text: String::new(),
             selected_block: None,
             viewport: Viewport::new(),
