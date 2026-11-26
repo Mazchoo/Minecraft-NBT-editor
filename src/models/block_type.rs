@@ -1,6 +1,7 @@
 #![allow(dead_code)] // consumed by the viewport once textured block drawing lands
 
 use super::block::BasicBlock;
+use super::sign::SignKind;
 
 /// Classification of a resolved block. Families are opt-in specialisations;
 /// anything with geometry that no family claims is [`Self::Elements`].
@@ -10,6 +11,8 @@ pub enum BlockType {
     Basic(BasicBlock),
     /// Anything else with geometry: drawn from the element list.
     Elements,
+    /// A sign: no model geometry, drawn from hand-built boxes.
+    Sign(SignKind),
     /// No geometry anywhere in the model chain: drawn as an inset placeholder.
     BlockEntity,
     /// Deliberately draws nothing: air, barrier, structure void.
@@ -24,7 +27,10 @@ impl BlockType {
             return Self::Invisible;
         }
         if !has_geometry {
-            return Self::BlockEntity;
+            return match SignKind::from_name(name) {
+                Some(kind) => Self::Sign(kind),
+                None => Self::BlockEntity,
+            };
         }
         match parent_stem.and_then(BasicBlock::from_parent) {
             Some(basic) => Self::Basic(basic),
@@ -58,6 +64,10 @@ mod tests {
         assert_eq!(
             BlockType::classify("minecraft:chest", None, false),
             BlockType::BlockEntity
+        );
+        assert_eq!(
+            BlockType::classify("minecraft:oak_wall_sign", None, false),
+            BlockType::Sign(SignKind::Wall)
         );
         assert_eq!(
             BlockType::classify("minecraft:stone", Some("cube_all"), true),

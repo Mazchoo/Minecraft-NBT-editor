@@ -300,6 +300,20 @@ impl Block {
         let particle_texture = resolved.particle_texture.clone();
         let parts = match block_type {
             BlockType::Invisible => Vec::new(),
+            BlockType::Sign(kind) => vec![BlockPart {
+                model: resolved
+                    .parts
+                    .first()
+                    .map_or_else(|| "missing".to_owned(), |part| part.model.clone()),
+                elements: kind.elements(
+                    &properties,
+                    particle_texture.as_deref().unwrap_or(""),
+                    resolved.chain_texture.as_deref(),
+                ),
+                // The elements already carry the sign's orientation.
+                rotation: StateRotation::IDENTITY,
+                uvlock: false,
+            }],
             BlockType::BlockEntity => vec![placeholder_part(
                 resolved
                     .parts
@@ -320,7 +334,7 @@ impl Block {
         let opaque = match block_type {
             BlockType::Basic(_) => true,
             BlockType::Elements => covers.iter().all(|&c| c),
-            BlockType::BlockEntity | BlockType::Invisible => false,
+            BlockType::Sign(_) | BlockType::BlockEntity | BlockType::Invisible => false,
         };
 
         Self {
@@ -358,7 +372,7 @@ impl Block {
         match self.block_type {
             BlockType::Basic(_) => true,
             BlockType::Elements => self.covers[face.index()],
-            BlockType::BlockEntity | BlockType::Invisible => false,
+            BlockType::Sign(_) | BlockType::BlockEntity | BlockType::Invisible => false,
         }
     }
 
@@ -372,7 +386,7 @@ impl Block {
     pub fn occlusion_mask(&self, has_alpha: impl Fn(&str) -> bool) -> u8 {
         let mut mask = 0;
         match self.block_type {
-            BlockType::Invisible | BlockType::BlockEntity => {}
+            BlockType::Invisible | BlockType::BlockEntity | BlockType::Sign(_) => {}
             BlockType::Basic(_) => {
                 // Mirrors the fast path in the mesh builder: six unit-cube
                 // faces textured from the first element.
@@ -495,7 +509,7 @@ fn placeholder_elements(particle: Option<&str>) -> Vec<Element> {
 fn compute_covers(block_type: BlockType, parts: &[BlockPart]) -> [bool; 6] {
     match block_type {
         BlockType::Basic(_) => [true; 6],
-        BlockType::BlockEntity | BlockType::Invisible => [false; 6],
+        BlockType::Sign(_) | BlockType::BlockEntity | BlockType::Invisible => [false; 6],
         BlockType::Elements => {
             let mut covers = [false; 6];
             for part in parts {

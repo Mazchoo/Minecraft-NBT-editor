@@ -720,6 +720,13 @@ These are split by intent rather than lumped together:
     stand-in rather than a solid block, and the type is surfaced in the UI so the properties panel
     can still show the block entity's NBT and the sidebar can mark it as approximated.
 
+*   `BlockType::Sign(SignKind)` for signs, recognised by name (`*_sign`, `*_wall_sign`,
+    `*_hanging_sign`, `*_wall_hanging_sign`). `models/sign.rs` builds the upstream renderer's boxes
+    by hand — board and post, board against a wall, or board on chains — textured with the chain's
+    `particle` texture and turned by `rotation` (22.5 degree steps) or `facing`. Wall signs have no
+    model file of their own; `resolve` maps them onto the standing sign's model, as their
+    blockstate does upstream. Sign text is not drawn.
+
 Drawing a recognisable placeholder matters more than it sounds: chests and signs are common enough
 in schematics that silently dropping them would leave visible holes in an otherwise correct render.
 

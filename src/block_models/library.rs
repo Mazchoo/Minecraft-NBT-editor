@@ -43,6 +43,9 @@ pub struct ResolvedBlock {
     pub parent_stem: Option<String>,
     /// The chain's `particle` texture, if the merged dictionary has one.
     pub particle_texture: Option<String>,
+    /// The chain block's texture, set only for hanging signs, which draw chains
+    /// their own model does not describe.
+    pub chain_texture: Option<String>,
     pub parts: Vec<ResolvedPart>,
 }
 
@@ -195,6 +198,12 @@ impl ModelLibrary {
 
     fn resolve_uncached(&self, name: &str, properties: &BTreeMap<String, String>) -> ResolvedBlock {
         let stem = asset_stem(name);
+        // Wall signs have no model of their own: upstream, their blockstate
+        // points at the standing sign's model.
+        let stem = match wall_sign_model_stem(&stem) {
+            Some(shared) if !self.models.contains_key(&stem) => shared,
+            _ => stem,
+        };
         let Some(record) = self.models.get(&stem) else {
             log::warn!("model `{stem}` is not in the library; using fallback cube");
             return fallback_cube(properties.clone());
@@ -213,6 +222,10 @@ impl ModelLibrary {
                 properties: properties.clone(),
                 parent_stem,
                 particle_texture,
+                chain_texture: stem
+                    .ends_with("_hanging_sign")
+                    .then(|| self.chain_texture())
+                    .flatten(),
                 parts: vec![ResolvedPart {
                     model: stem,
                     elements: Vec::new(),
@@ -226,6 +239,7 @@ impl ModelLibrary {
                 properties: properties.clone(),
                 parent_stem,
                 particle_texture,
+                chain_texture: None,
                 parts: vec![ResolvedPart {
                     model: stem,
                     elements,
@@ -239,6 +253,14 @@ impl ModelLibrary {
                 fallback_cube(properties.clone())
             }
         }
+    }
+
+    /// Texture of the chain block, whose model is `chain` before 1.21.9 and
+    /// `iron_chain` after.
+    fn chain_texture(&self) -> Option<String> {
+        ["chain", "iron_chain"]
+            .into_iter()
+            .find_map(|stem| self.merge_textures(stem)?.remove("particle"))
     }
 
     /// Child-first texture merge. Returns `None` when the parent chain exceeds the depth cap.
@@ -284,6 +306,17 @@ impl ModelLibrary {
             .into_iter()
             .map(|element| bind_element(element, merged))
             .collect())
+    }
+}
+
+/// Model stem a wall-mounted sign shares with its free-standing counterpart:
+/// `oak_wall_sign` -> `oak_sign`, `oak_wall_hanging_sign` -> `oak_hanging_sign`.
+fn wall_sign_model_stem(stem: &str) -> Option<String> {
+    if let Some(wood) = stem.strip_suffix("_wall_hanging_sign") {
+        Some(format!("{wood}_hanging_sign"))
+    } else {
+        stem.strip_suffix("_wall_sign")
+            .map(|wood| format!("{wood}_sign"))
     }
 }
 
@@ -376,6 +409,7 @@ fn fallback_cube(properties: BTreeMap<String, String>) -> ResolvedBlock {
         properties,
         parent_stem: None,
         particle_texture: None,
+        chain_texture: None,
         parts: vec![ResolvedPart {
             model: "missing".into(),
             elements: vec![ResolvedElement {
@@ -595,6 +629,52 @@ mod tests {
         assert!(resolved.parts[0].elements.is_empty());
         assert_eq!(resolved.particle_texture.as_deref(), Some("oak_planks"));
         assert_eq!(resolved.parent_stem, None);
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn resolve_wall_signs_share_the_standing_sign_model() {
+        let dir = temp_dir("model-library-signs");
+        fs::write(
+            dir.join(crate::constants::MODELS_MANIFEST_FILE),
+            r##"{
+                "oak_sign": {
+                    "file_name": "oak_sign.json",
+                    "parent": null,
+                    "textures": { "particle": "oak_planks" },
+                    "elements_from": null
+                },
+                "oak_hanging_sign": {
+                    "file_name": "oak_hanging_sign.json",
+                    "parent": null,
+                    "textures": { "particle": "stripped_oak_log" },
+                    "elements_from": null
+                },
+                "chain": {
+                    "file_name": "chain.json",
+                    "parent": null,
+                    "textures": { "all": "chain", "particle": "#all" },
+                    "elements_from": "chain"
+                }
+            }"##,
+        )
+        .unwrap();
+        let library = ModelLibrary::from_cache_dir(&dir);
+        let empty = BTreeMap::new();
+
+        let wall = library.resolve("minecraft:oak_wall_sign", &empty);
+        assert_eq!(wall.parts[0].model, "oak_sign");
+        assert!(wall.parts[0].block_entity);
+        assert_eq!(wall.particle_texture.as_deref(), Some("oak_planks"));
+        assert_eq!(wall.chain_texture, None);
+
+        let hanging = library.resolve("minecraft:oak_wall_hanging_sign", &empty);
+        assert_eq!(hanging.parts[0].model, "oak_hanging_sign");
+        assert_eq!(
+            hanging.particle_texture.as_deref(),
+            Some("stripped_oak_log")
+        );
+        assert_eq!(hanging.chain_texture.as_deref(), Some("chain"));
         fs::remove_dir_all(dir).ok();
     }
 
