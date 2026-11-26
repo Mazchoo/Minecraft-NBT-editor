@@ -69,6 +69,17 @@ impl Viewport {
             }
         }
 
+        // Right click deletes the highlighted block. A ground hit targets the
+        // virtual cell at `y = -1`, which is never occupied, so it is a no-op.
+        let mut hit = hit;
+        if response.secondary_clicked()
+            && let Some(target) = hit
+            && world.remove(target.cell)
+        {
+            hit = None;
+            ui.ctx().request_repaint();
+        }
+
         let mesh = world
             .take_dirty()
             .then(|| Arc::new(rendering::build_gpu_mesh(world, models, textures)));
@@ -96,7 +107,7 @@ fn placement_hit(
     if !placing {
         return None;
     }
-    let pos = if response.clicked() {
+    let pos = if response.clicked() || response.secondary_clicked() {
         response.interact_pointer_pos()
     } else {
         response.hover_pos()

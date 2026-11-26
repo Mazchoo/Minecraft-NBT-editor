@@ -39,6 +39,13 @@ impl World {
         }
     }
 
+    /// Removes the block in `cell`. Returns whether a block was there.
+    pub fn remove(&mut self, cell: IVec3) -> bool {
+        let removed = self.cells.remove(&cell).is_some();
+        self.dirty |= removed;
+        removed
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (IVec3, &str)> {
         self.cells.iter().map(|(cell, name)| (*cell, name.as_str()))
     }
@@ -68,6 +75,18 @@ mod tests {
         assert!(!world.place(IVec3::ZERO, "dirt"));
         assert_eq!(world.iter().count(), 1);
         assert_eq!(world.iter().next().unwrap(), (IVec3::ZERO, "stone"));
+    }
+
+    #[test]
+    fn remove_clears_occupied_cell_and_ignores_empty() {
+        let mut world = World::new();
+        world.place(IVec3::ZERO, "stone");
+        world.take_dirty();
+        assert!(!world.remove(IVec3::X));
+        assert!(!world.take_dirty());
+        assert!(world.remove(IVec3::ZERO));
+        assert!(world.is_empty());
+        assert!(world.take_dirty());
     }
 
     #[test]
