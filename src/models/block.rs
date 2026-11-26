@@ -297,7 +297,13 @@ impl Block {
             block_type = BlockType::Elements;
         }
 
-        let particle_texture = resolved.particle_texture.clone();
+        // Invisible blocks draw nothing, so they must not request a texture:
+        // barrier's model names `item/barrier` as its particle, which is not
+        // a block texture and would otherwise be looked up and reported missing.
+        let particle_texture = match block_type {
+            BlockType::Invisible => None,
+            _ => resolved.particle_texture.clone(),
+        };
         let parts = match block_type {
             BlockType::Invisible => Vec::new(),
             BlockType::Sign(kind) => vec![BlockPart {
