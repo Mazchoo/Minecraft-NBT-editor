@@ -7,6 +7,7 @@ use eframe::egui;
 
 use crate::block_models::ModelLibrary;
 use crate::config::{CONFIG, Config};
+use crate::constants::HOTBAR_LABEL_WIDTH_FRACTION;
 use crate::jar_import::{ImportedAssets, import_from_jar};
 use crate::rendering;
 use crate::textures::{JarError, TextureLibrary};
@@ -229,6 +230,15 @@ fn variant_label(properties: &BTreeMap<String, String>) -> String {
         .join(", ")
 }
 
+/// A single-line label cut off with an ellipsis at `max_width`. Hovering a
+/// cut-off label shows its full text.
+fn truncated_label(ui: &mut egui::Ui, text: String, max_width: f32) {
+    ui.scope(|ui| {
+        ui.set_max_width(max_width);
+        ui.add(egui::Label::new(text).truncate());
+    });
+}
+
 impl eframe::App for App {
     /// Takes Tab and Shift+Tab for variant cycling before egui uses them to
     /// move keyboard focus. Left alone while a text field is being typed in.
@@ -292,24 +302,37 @@ impl eframe::App for App {
             ui.horizontal(|ui| {
                 ui.label(format!("Tool: {}", self.active_tool.name()));
                 ui.separator();
-                ui.label(match (&self.selected_block, self.variant_at(0)) {
+                let block_text = match (&self.selected_block, self.variant_at(0)) {
                     (Some(block), Some(variant)) if self.variants.len() > 1 => format!(
-                        "Block: {block} [{}] ({}/{})",
-                        variant_label(variant),
+                        "Block: {block} ({}/{}) [{}]",
                         self.variant_index + 1,
-                        self.variants.len()
+                        self.variants.len(),
+                        variant_label(variant)
                     ),
                     (Some(block), _) => format!("Block: {block}"),
                     (None, _) => "Block: none".to_owned(),
-                });
+                };
                 if self.variants.len() > 1
                     && let (Some(previous), Some(next)) = (self.variant_at(-1), self.variant_at(1))
                 {
+                    // Each label takes at most a share of the space left, so
+                    // the three always fit however long the variants are.
+                    let share = ui.available_width() * HOTBAR_LABEL_WIDTH_FRACTION;
+                    truncated_label(ui, block_text, share);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(format!("Tab: {}", variant_label(next)));
+                        let share = ui.available_width() * HOTBAR_LABEL_WIDTH_FRACTION;
+                        truncated_label(ui, format!("Tab: {}", variant_label(next)), share);
                         ui.separator();
-                        ui.label(format!("Shift+Tab: {}", variant_label(previous)));
+                        let rest = ui.available_width();
+                        truncated_label(
+                            ui,
+                            format!("Shift+Tab: {}", variant_label(previous)),
+                            rest,
+                        );
                     });
+                } else {
+                    let rest = ui.available_width();
+                    truncated_label(ui, block_text, rest);
                 }
             });
         });

@@ -18,6 +18,10 @@ pub const MODELS_MANIFEST_FILE: &str = "_models.cache.json";
 /// File name of the blockstate cache manifest at the repository root.
 pub const BLOCKSTATES_MANIFEST_FILE: &str = "_blockstates.cache.json";
 
+/// Share of the hotbar's remaining width a label may fill before it is cut
+/// off, leaving room for the labels after it.
+pub const HOTBAR_LABEL_WIDTH_FRACTION: f32 = 0.5;
+
 /// Blockstate property naming the axis a block lies along.
 pub const AXIS_PROPERTY: &str = "axis";
 
