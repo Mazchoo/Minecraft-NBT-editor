@@ -8,15 +8,16 @@ use eframe::egui;
 use crate::block_models::ModelLibrary;
 use crate::config::{CONFIG, Config};
 use crate::constants::HOTBAR_LABEL_WIDTH_FRACTION;
-use crate::jar_import::{ImportedAssets, import_from_jar};
+use crate::import::jar::{ImportedAssets, JarError, import_from_jar};
+use crate::import::nbt;
 use crate::rendering;
-use crate::textures::{JarError, TextureLibrary};
+use crate::textures::TextureLibrary;
 use crate::transactions::History;
 use crate::ui::left_panel::{self, Tool};
 use crate::ui::ribbon;
 use crate::ui::right_panel;
 use crate::viewport::Viewport;
-use crate::world::{BlockState, World, structure};
+use crate::world::{BlockState, World};
 
 struct PendingJarImport {
     path: PathBuf,
@@ -189,7 +190,7 @@ impl App {
     /// camera at it. The undo history belongs to the old world and is dropped.
     /// On failure the current world is kept.
     fn import_nbt(&mut self, path: &Path) {
-        match structure::load(path) {
+        match nbt::load(path) {
             Ok(world) => {
                 log::info!(
                     "imported {} blocks from {}",

@@ -1,23 +1,108 @@
+//! Importing textures, block models and blockstates from a Minecraft client jar.
+
+pub(crate) mod models;
+pub(crate) mod textures;
+
 use std::collections::HashMap;
-use std::fs;
+use std::fs::{self, File};
+use std::io::{self, Read};
 use std::path::Path;
 
-use crate::block_models::{
-    BlockDefinition, BlockModel, fill_elements_from, ingest_blockstate, ingest_model,
-    match_block_model, match_blockstate, remove_stale_cache_files, write_blockstates_manifest,
-    write_manifest as write_models_manifest,
+use crate::block_models::{BlockDefinition, BlockModel};
+use crate::textures::Texture;
+
+use self::models::{
+    fill_elements_from, ingest_blockstate, ingest_model, match_block_model, match_blockstate,
+    remove_stale_cache_files, write_blockstates_manifest, write_manifest as write_models_manifest,
 };
-use crate::textures::jar::{
-    for_each_jar_file, ingest_texture, match_block_texture,
+use self::textures::{
+    ingest_chest_atlas, ingest_texture, match_block_texture, match_chest_atlas,
     remove_stale_cache_files as remove_stale_textures, write_manifest as write_textures_manifest,
 };
-use crate::textures::{JarError, Texture};
 
 /// Result of a single pass over a Minecraft client jar.
 pub struct ImportedAssets {
     pub textures: HashMap<String, Texture>,
     pub models: HashMap<String, BlockModel>,
     pub definitions: HashMap<String, BlockDefinition>,
+}
+
+/// Failure opening a jar, creating the cache, or writing the manifest.
+#[derive(Debug)]
+pub enum JarError {
+    Io(io::Error),
+    Zip(zip::result::ZipError),
+    Json(serde_json::Error),
+}
+
+impl std::fmt::Display for JarError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(err) => write!(f, "{err}"),
+            Self::Zip(err) => write!(f, "{err}"),
+            Self::Json(err) => write!(f, "{err}"),
+        }
+    }
+}
+
+impl std::error::Error for JarError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io(err) => Some(err),
+            Self::Zip(err) => Some(err),
+            Self::Json(err) => Some(err),
+        }
+    }
+}
+
+impl From<io::Error> for JarError {
+    fn from(err: io::Error) -> Self {
+        Self::Io(err)
+    }
+}
+
+impl From<zip::result::ZipError> for JarError {
+    fn from(err: zip::result::ZipError) -> Self {
+        Self::Zip(err)
+    }
+}
+
+impl From<serde_json::Error> for JarError {
+    fn from(err: serde_json::Error) -> Self {
+        Self::Json(err)
+    }
+}
+
+/// Opens `jar_path` and yields each file entry's path and bytes.
+pub(crate) fn for_each_jar_file(
+    jar_path: &Path,
+    mut visit: impl FnMut(&str, Vec<u8>),
+) -> Result<(), JarError> {
+    let file = File::open(jar_path)?;
+    let mut archive = zip::ZipArchive::new(file)?;
+    for index in 0..archive.len() {
+        let Some(name) = archive.name_for_index(index).map(str::to_owned) else {
+            continue;
+        };
+        let mut entry = match archive.by_index(index) {
+            Ok(entry) => entry,
+            Err(err) => {
+                log::warn!("skipping jar entry {index}: {err}");
+                continue;
+            }
+        };
+        if !entry.is_file() {
+            continue;
+        }
+        let mut bytes = Vec::with_capacity(entry.size() as usize);
+        if let Err(err) = entry.read_to_end(&mut bytes) {
+            log::warn!("failed to read {name} from jar: {err}");
+            continue;
+        }
+        drop(entry);
+        visit(&name, bytes);
+    }
+    Ok(())
 }
 
 /// Opens the jar once and offers every entry to the texture, model and blockstate matchers.
@@ -43,6 +128,9 @@ pub fn import_from_jar(
                 ingest_texture(texture_cache_dir, file_name, format, &bytes)
         {
             textures.insert(key, texture);
+        }
+        if let Some(stem) = match_chest_atlas(name) {
+            textures.extend(ingest_chest_atlas(texture_cache_dir, &stem, &bytes));
         }
         if let Some(file_name) = match_block_model(name)
             && let Some((key, model, elements)) = ingest_model(model_cache_dir, file_name, &bytes)

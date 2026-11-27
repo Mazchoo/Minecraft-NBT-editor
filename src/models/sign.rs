@@ -170,7 +170,7 @@ fn turn_about_centre(xz: [f32; 2], yaw: f32) -> [f32; 2] {
 ///
 /// Turning a box about the block centre is the same as moving its centre and
 /// turning it in place, which lets one element rotation carry both angles.
-fn placed_box(
+pub(super) fn placed_box(
     centre: [f32; 2],
     half: [f32; 2],
     y0: f32,

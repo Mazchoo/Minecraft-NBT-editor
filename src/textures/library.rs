@@ -9,8 +9,9 @@ use image::RgbaImage;
 
 use crate::config::Config;
 
-use super::jar::{JarError, import_into_cache};
 use super::texture::Texture;
+use crate::import::jar::JarError;
+use crate::import::jar::textures::import_into_cache;
 
 /// In-memory dictionary of cached block textures, backed by the cache manifest.
 pub struct TextureLibrary {

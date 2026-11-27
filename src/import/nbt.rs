@@ -10,8 +10,8 @@ use flate2::read::GzDecoder;
 use glam::IVec3;
 use serde::Deserialize;
 
-use super::{BlockState, World};
 use crate::constants::{AIR_BLOCK_NAMES, GZIP_MAGIC};
+use crate::world::{BlockState, World};
 
 #[derive(Debug)]
 pub enum StructureError {

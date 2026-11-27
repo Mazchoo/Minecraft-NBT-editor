@@ -4,11 +4,9 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-use crate::textures::JarError;
+use crate::block_models::{BlockDefinition, BlockModel, asset_stem};
 
-use super::block_definition::BlockDefinition;
-use super::block_model::BlockModel;
-use super::model_json::asset_stem;
+use super::JarError;
 
 /// Maximum parent-chain length when computing `elements_from`.
 const PARENT_CHAIN_LIMIT: usize = 32;

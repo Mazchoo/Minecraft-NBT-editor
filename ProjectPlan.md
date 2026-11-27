@@ -44,6 +44,9 @@ Imported once from a client `.jar` (the only supported source) and read back on 
 
 *   **Extraction.** Entries matching `assets/{namespace}/textures/block/{file}.{png|bmp|jpg}` are
     written to `./texture_cache/` under their original name.
+*   **Chest tiles.** Entries matching `assets/{namespace}/textures/entity/chest/{file}.png` are
+    atlases laid out on a 64x64 grid. Each is cut into one 16x16 file per drawn box face, the face
+    at the top-left: `chest_{file}_{base|lid|lock}_{face}.png` (`chest_normal_left_lid_up`).
 *   **Key.** The file stem (`glass`). One key, one file.
 *   **Record.** `Texture { file_name, format, has_alpha }`. `has_alpha` is set at extraction if any
     pixel has alpha below 255; `bmp` and `jpg` are always `false`.
@@ -52,7 +55,7 @@ Imported once from a client `.jar` (the only supported source) and read back on 
 *   **Query.** `TextureLibrary::get(key)` returns decoded pixels, memoised. An unknown key or
     unreadable file logs a warning and returns `./assets/image-missing.png`.
 *   **Modules** (`src/textures/`): `texture.rs` (record, format), `library.rs` (dictionary, manifest,
-    queries), `jar.rs` (extraction).
+    queries). Extraction: `src/import/jar/textures.rs`.
 
 `texture_cache/` and the manifest are gitignored.
 
@@ -93,7 +96,7 @@ Imported from the same jar walk as textures.
 *   **Reload.** The manifest is reloaded when its modification time changes, except during a jar
     import.
 *   **Modules** (`src/block_models/`): `block_model.rs` (record), `model_json.rs` (serde types),
-    `library.rs` (dictionary, manifest, resolution), `jar.rs` (extraction).
+    `library.rs` (dictionary, manifest, resolution). Extraction: `src/import/jar/models.rs`.
 
 `model_cache/` and the manifest are gitignored.
 
@@ -149,7 +152,7 @@ again.
 | `models/block.rs` | `Face`, `Block`, `BlockPart`, `BasicBlock`, `FACE_CORNERS` |
 | `models/block_type.rs` | `BlockType` |
 | `models/element.rs` | `Element`, `ElementFace`, `ElementRotation`, `StateRotation`, tint table |
-| `models/sign.rs`, `models/banner.rs` | Hand-built geometry for signs and banners |
+| `models/sign.rs`, `models/banner.rs`, `models/chest.rs` | Hand-built geometry for signs, banners and chests |
 | `rendering/block_mesh.rs` | `BlockVertex`, face emission |
 | `rendering/blocks.rs` | Mesh build from the world, texture array, block pipeline |
 | `rendering/visibility.rs` | Neighbour and cavity culling |
@@ -166,6 +169,7 @@ A `Block` is one palette entry: `name`, `properties`, `block_type`, `parts` and 
 | `Invisible` | air, cave_air, void_air, barrier, structure_void, light | nothing |
 | `Sign(SignKind)` | no geometry, `*_sign` / `*_wall_sign` / `*_hanging_sign` / `*_wall_hanging_sign` | hand-built boxes |
 | `Banner(BannerKind)` | no geometry, `*_banner` / `*_wall_banner` | hand-built boxes |
+| `Chest(ChestKind)` | no geometry, `chest` / `trapped_chest` / `ender_chest` | hand-built boxes |
 | `BlockEntity` | any other block with no geometry | inset placeholder cube |
 | `Basic(BasicBlock)` | parent `cube_all` or `cube_column`, no property rotation | full-cube fast path |
 | `Elements` | everything else | element list |
@@ -249,6 +253,9 @@ more than one part.
     turned by `rotation` (22.5° steps) or `facing`. Text is not drawn.
 *   `Banner`: pole, crossbar and flag. Wood uses `particle`; the flag uses `<colour>_wool`. Patterns
     are not drawn.
+*   `Chest`: base, lid and lock, closed, turned by `facing`. Faces use the chest tiles (3) of the
+    `normal`, `trapped` or `ender` atlas. `type=left` / `right` use the `_left` / `_right` atlas
+    and reach the shared side of the cell; `ender_chest` is always single.
 
 ### 5.8. Textures on the GPU
 
@@ -270,8 +277,8 @@ when the world is marked dirty.
 *   **Cavity.** Open space is flood-filled from outside the structure's bounding box. Faces facing
     only unreached space, and geometry inside it, are skipped. Limited to
     `Config::MAX_CAVITY_FLOOD_CELLS`; larger structures use neighbour culling only.
-*   `Block::occlusion_mask` gives the sides a block fully hides. `Invisible`, `BlockEntity`, `Sign`
-    and `Banner` hide nothing.
+*   `Block::occlusion_mask` gives the sides a block fully hides. `Invisible`, `BlockEntity`, `Sign`,
+    `Banner` and `Chest` hide nothing.
 
 ---
 
@@ -324,7 +331,7 @@ the world with it.
 *   The undo history is cleared and the camera frames the imported blocks.
 *   A file that fails to parse, a `pos` without three values, or a `state` outside the palette
     logs an error and leaves the world unchanged.
-*   **Module:** `src/world/structure.rs`.
+*   **Module:** `src/import/nbt.rs`.
 
 ### 6.5. Block Picker and Variants
 
@@ -359,3 +366,18 @@ translation, rotation, and line, cuboid and cylinder placement.
 ### Phase 5: Re-usable templates
 
 ### Phase 6: Layers
+
+## 8. Open Issues
+
+- Snapping to view and then rotating the camera snaps the camera below the ground
+- Placeholder block should not cull faces of anything around it
+- Check transparent blocks do not cull faces
+- Release mode does not keep orientation in one place when rotating view
+- Going below the ground should make the ground unselectable
+- Q should reset view to origin
+- R will rotate current block on selected face
+- F will cycle though variants of a block
+- T will push the current block forward
+- G will duplicate the current selected block
+- Current selected tool should be known
+- Support mods block import

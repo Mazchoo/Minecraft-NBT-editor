@@ -4,7 +4,7 @@ mod app;
 mod block_models;
 mod config;
 mod constants;
-mod jar_import;
+mod import;
 mod models;
 mod rendering;
 mod textures;

@@ -1,94 +1,22 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
-use std::io::{self, Read, Write};
+use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
 
-use super::check_alpha::inspect_alpha;
-use super::image_format::ImageFormat;
-use super::texture::Texture;
+use image::RgbaImage;
 
-/// Failure opening a jar, creating the cache, or writing the manifest.
-#[derive(Debug)]
-pub enum JarError {
-    Io(io::Error),
-    Zip(zip::result::ZipError),
-    Json(serde_json::Error),
-}
+use crate::config::Config;
+use crate::constants::CHEST_ATLAS_SIZE;
+use crate::models::chest::ChestHalf;
+use crate::textures::{ImageFormat, Texture, inspect_alpha};
 
-impl std::fmt::Display for JarError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Io(err) => write!(f, "{err}"),
-            Self::Zip(err) => write!(f, "{err}"),
-            Self::Json(err) => write!(f, "{err}"),
-        }
-    }
-}
+use super::{JarError, for_each_jar_file};
 
-impl std::error::Error for JarError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Io(err) => Some(err),
-            Self::Zip(err) => Some(err),
-            Self::Json(err) => Some(err),
-        }
-    }
-}
-
-impl From<io::Error> for JarError {
-    fn from(err: io::Error) -> Self {
-        Self::Io(err)
-    }
-}
-
-impl From<zip::result::ZipError> for JarError {
-    fn from(err: zip::result::ZipError) -> Self {
-        Self::Zip(err)
-    }
-}
-
-impl From<serde_json::Error> for JarError {
-    fn from(err: serde_json::Error) -> Self {
-        Self::Json(err)
-    }
-}
-
-/// Opens `jar_path` and yields each file entry's path and bytes.
-pub(crate) fn for_each_jar_file(
-    jar_path: &Path,
-    mut visit: impl FnMut(&str, Vec<u8>),
-) -> Result<(), JarError> {
-    let file = File::open(jar_path)?;
-    let mut archive = zip::ZipArchive::new(file)?;
-    for index in 0..archive.len() {
-        let Some(name) = archive.name_for_index(index).map(str::to_owned) else {
-            continue;
-        };
-        let mut entry = match archive.by_index(index) {
-            Ok(entry) => entry,
-            Err(err) => {
-                log::warn!("skipping jar entry {index}: {err}");
-                continue;
-            }
-        };
-        if !entry.is_file() {
-            continue;
-        }
-        let mut bytes = Vec::with_capacity(entry.size() as usize);
-        if let Err(err) = entry.read_to_end(&mut bytes) {
-            log::warn!("failed to read {name} from jar: {err}");
-            continue;
-        }
-        drop(entry);
-        visit(&name, bytes);
-    }
-    Ok(())
-}
-
-/// Extracts `assets/{namespace}/textures/block/*.{png,bmp,jpg}` into `cache_dir`.
+/// Extracts `assets/{namespace}/textures/block/*.{png,bmp,jpg}` into `cache_dir`,
+/// plus the tiles cut from `textures/entity/chest/*.png`.
 ///
-/// Each matching entry is written under its original file name. The returned map is keyed
+/// Each block texture is written under its original file name. The returned map is keyed
 /// by file stem (e.g. `glass`).
 pub fn extract_from_jar(
     jar_path: &Path,
@@ -97,6 +25,9 @@ pub fn extract_from_jar(
     fs::create_dir_all(cache_dir)?;
     let mut textures = HashMap::new();
     for_each_jar_file(jar_path, |name, bytes| {
+        if let Some(stem) = match_chest_atlas(name) {
+            textures.extend(ingest_chest_atlas(cache_dir, &stem, &bytes));
+        }
         let Some((file_name, format)) = match_block_texture(name) else {
             return;
         };
@@ -140,6 +71,18 @@ pub(crate) fn import_into_cache(
 
 /// Matches `assets/{namespace}/textures/block/{file}.{png|bmp|jpg}`.
 pub(crate) fn match_block_texture(entry_name: &str) -> Option<(String, ImageFormat)> {
+    match_texture(entry_name, &["block"])
+}
+
+/// Matches `assets/{namespace}/textures/entity/chest/{file}.png`, returning
+/// the file stem (`normal_left`).
+pub(crate) fn match_chest_atlas(entry_name: &str) -> Option<String> {
+    let (file_name, format) = match_texture(entry_name, &["entity", "chest"])?;
+    (format == ImageFormat::Png).then(|| file_stem(&file_name))
+}
+
+/// Matches an image file directly inside `assets/{namespace}/textures/{dirs}/`.
+fn match_texture(entry_name: &str, dirs: &[&str]) -> Option<(String, ImageFormat)> {
     let name = if entry_name.contains('\\') {
         Cow::Owned(entry_name.replace('\\', "/"))
     } else {
@@ -149,12 +92,16 @@ pub(crate) fn match_block_texture(entry_name: &str) -> Option<(String, ImageForm
     let assets = parts.next()?;
     let namespace = parts.next()?;
     let textures = parts.next()?;
-    let block = parts.next()?;
-    let file = parts.next()?;
-    if parts.next().is_some() {
+    if assets != "assets" || textures != "textures" {
         return None;
     }
-    if assets != "assets" || textures != "textures" || block != "block" {
+    for dir in dirs {
+        if parts.next()? != *dir {
+            return None;
+        }
+    }
+    let file = parts.next()?;
+    if parts.next().is_some() {
         return None;
     }
     if namespace.is_empty() || file.is_empty() || file.contains("..") {
@@ -163,6 +110,48 @@ pub(crate) fn match_block_texture(entry_name: &str) -> Option<(String, ImageForm
     let (_, ext) = file.rsplit_once('.')?;
     let format = ImageFormat::from_extension(ext)?;
     Some((file.to_owned(), format))
+}
+
+/// Cuts a chest atlas into one tile per drawn box face and writes each into
+/// `cache_dir`, at the top-left of a square the size of a block texture so a
+/// tile's texels line up with model units. Returns `(key, record)` per tile.
+pub(crate) fn ingest_chest_atlas(
+    cache_dir: &Path,
+    stem: &str,
+    bytes: &[u8],
+) -> Vec<(String, Texture)> {
+    let atlas = match image::load_from_memory_with_format(bytes, image::ImageFormat::Png) {
+        Ok(image) => image.to_rgba8(),
+        Err(err) => {
+            log::warn!("failed to decode chest texture {stem}: {err}");
+            return Vec::new();
+        }
+    };
+    let scale = (atlas.width() / CHEST_ATLAS_SIZE).max(1);
+    let side = Config::TEXTURE_SIZE * scale;
+    let mut textures = Vec::new();
+    for tile in ChestHalf::from_atlas(stem).tiles(stem) {
+        let [x, y, width, height] = tile.region.map(|v| v * scale);
+        if x + width > atlas.width() || y + height > atlas.height() {
+            log::warn!("chest texture {stem} is too small for {}", tile.key);
+            continue;
+        }
+        let mut canvas = RgbaImage::new(side, side);
+        let face = image::imageops::crop_imm(&atlas, x, y, width, height).to_image();
+        image::imageops::replace(&mut canvas, &face, 0, 0);
+        let mut encoded = Vec::new();
+        if let Err(err) = canvas.write_to(&mut Cursor::new(&mut encoded), image::ImageFormat::Png) {
+            log::warn!("failed to encode {}: {err}", tile.key);
+            continue;
+        }
+        textures.extend(ingest_texture(
+            cache_dir,
+            format!("{}.png", tile.key),
+            ImageFormat::Png,
+            &encoded,
+        ));
+    }
+    textures
 }
 
 pub(crate) fn remove_stale_cache_files(cache_dir: &Path, textures: &HashMap<String, Texture>) {
@@ -268,6 +257,49 @@ mod tests {
             match_block_texture("assets\\minecraft\\textures\\block\\glass.png").unwrap();
         assert_eq!(name, "glass.png");
         assert_eq!(format, ImageFormat::Png);
+    }
+
+    #[test]
+    fn match_chest_atlas_accepts_only_the_chest_directory() {
+        assert_eq!(
+            match_chest_atlas("assets/minecraft/textures/entity/chest/normal_left.png").as_deref(),
+            Some("normal_left")
+        );
+        assert!(
+            match_chest_atlas("assets/minecraft/textures/entity/creeper/creeper.png").is_none()
+        );
+        assert!(match_chest_atlas("assets/minecraft/textures/block/chest.png").is_none());
+        assert!(match_block_texture("assets/minecraft/textures/entity/chest/normal.png").is_none());
+    }
+
+    #[test]
+    fn chest_atlas_is_cut_into_face_tiles() {
+        let dir = temp_dir("chest-atlas");
+        // Every texel records its own position in the atlas.
+        let atlas = RgbaImage::from_fn(64, 64, |x, y| Rgba([x as u8, y as u8, 0, 255]));
+        let mut bytes = Vec::new();
+        atlas
+            .write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)
+            .unwrap();
+
+        let textures: HashMap<String, Texture> = ingest_chest_atlas(&dir, "normal", &bytes)
+            .into_iter()
+            .collect();
+        assert_eq!(textures.len(), 15);
+        let record = &textures["chest_normal_lid_south"];
+        assert_eq!(record.file_name(), "chest_normal_lid_south.png");
+        let tile = image::open(dir.join(record.file_name()))
+            .unwrap()
+            .to_rgba8();
+        assert_eq!(tile.dimensions(), (16, 16));
+        // The 14x5 face sits at the top-left; the rest is transparent.
+        assert_eq!(tile.get_pixel(0, 0).0, [42, 14, 0, 255]);
+        assert_eq!(tile.get_pixel(13, 4).0, [55, 18, 0, 255]);
+        assert_eq!(tile.get_pixel(14, 0).0[3], 0);
+        assert_eq!(tile.get_pixel(0, 5).0[3], 0);
+
+        assert!(ingest_chest_atlas(&dir, "normal", b"not a png").is_empty());
+        fs::remove_dir_all(dir).ok();
     }
 
     #[test]

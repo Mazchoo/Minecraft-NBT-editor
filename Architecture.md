@@ -84,6 +84,13 @@ project_plan.md          # phased implementation plan and data models
 src/
   main.rs                # eframe entry point, wgpu backend selection
   app.rs                 # top-level App: panel layout, shared editor state
+  import/
+    mod.rs
+    nbt.rs               # structure .nbt file -> World
+    jar/
+      mod.rs             # single-pass client jar import, JarError
+      textures.rs        # block texture extraction + manifest
+      models.rs          # block model / blockstate extraction + manifests
   ui/
     mod.rs
     left_panel.rs        # tool sidebar (tool enum + buttons)

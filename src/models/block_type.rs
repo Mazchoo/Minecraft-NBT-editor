@@ -2,6 +2,7 @@
 
 use super::banner::BannerKind;
 use super::block::BasicBlock;
+use super::chest::ChestKind;
 use super::sign::SignKind;
 
 /// Classification of a resolved block. Families are opt-in specialisations;
@@ -16,6 +17,8 @@ pub enum BlockType {
     Sign(SignKind),
     /// A banner: no model geometry, drawn from hand-built boxes.
     Banner(BannerKind),
+    /// A chest: no model geometry, drawn from hand-built boxes.
+    Chest(ChestKind),
     /// No geometry anywhere in the model chain: drawn as an inset placeholder.
     BlockEntity,
     /// Deliberately draws nothing: air, barrier, structure void.
@@ -33,8 +36,11 @@ impl BlockType {
             if let Some(kind) = SignKind::from_name(name) {
                 return Self::Sign(kind);
             }
-            return match BannerKind::from_name(name) {
-                Some(kind) => Self::Banner(kind),
+            if let Some(kind) = BannerKind::from_name(name) {
+                return Self::Banner(kind);
+            }
+            return match ChestKind::from_name(name) {
+                Some(kind) => Self::Chest(kind),
                 None => Self::BlockEntity,
             };
         }
@@ -68,8 +74,12 @@ mod tests {
             BlockType::Invisible
         );
         assert_eq!(
-            BlockType::classify("minecraft:chest", None, false),
+            BlockType::classify("minecraft:shulker_box", None, false),
             BlockType::BlockEntity
+        );
+        assert_eq!(
+            BlockType::classify("minecraft:trapped_chest", None, false),
+            BlockType::Chest(ChestKind::Trapped)
         );
         assert_eq!(
             BlockType::classify("minecraft:oak_wall_sign", None, false),

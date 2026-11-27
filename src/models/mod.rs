@@ -1,6 +1,7 @@
 pub mod banner;
 pub mod block;
 pub mod block_type;
+pub mod chest;
 pub mod element;
 pub mod sign;
 

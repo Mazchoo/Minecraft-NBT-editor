@@ -355,6 +355,16 @@ impl Block {
                 rotation: StateRotation::IDENTITY,
                 uvlock: false,
             }],
+            BlockType::Chest(kind) => vec![BlockPart {
+                model: resolved
+                    .parts
+                    .first()
+                    .map_or_else(|| "missing".to_owned(), |part| part.model.clone()),
+                elements: kind.elements(&properties),
+                // The elements already carry the chest's orientation.
+                rotation: StateRotation::IDENTITY,
+                uvlock: false,
+            }],
             BlockType::BlockEntity => vec![placeholder_part(
                 resolved
                     .parts
@@ -383,6 +393,7 @@ impl Block {
             BlockType::Elements => covers.iter().all(|&c| c),
             BlockType::Sign(_)
             | BlockType::Banner(_)
+            | BlockType::Chest(_)
             | BlockType::BlockEntity
             | BlockType::Invisible => false,
         };
@@ -424,6 +435,7 @@ impl Block {
             BlockType::Elements => self.covers[face.index()],
             BlockType::Sign(_)
             | BlockType::Banner(_)
+            | BlockType::Chest(_)
             | BlockType::BlockEntity
             | BlockType::Invisible => false,
         }
@@ -442,7 +454,8 @@ impl Block {
             BlockType::Invisible
             | BlockType::BlockEntity
             | BlockType::Sign(_)
-            | BlockType::Banner(_) => {}
+            | BlockType::Banner(_)
+            | BlockType::Chest(_) => {}
             BlockType::Basic(_) => {
                 // Mirrors the fast path in the mesh builder: six unit-cube
                 // faces textured from the first element.
@@ -567,6 +580,7 @@ fn compute_covers(block_type: BlockType, parts: &[BlockPart]) -> [bool; 6] {
         BlockType::Basic(_) => [true; 6],
         BlockType::Sign(_)
         | BlockType::Banner(_)
+        | BlockType::Chest(_)
         | BlockType::BlockEntity
         | BlockType::Invisible => [false; 6],
         BlockType::Elements => {

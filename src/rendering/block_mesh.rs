@@ -51,6 +51,7 @@ impl BlockMesh {
             BlockType::Elements
             | BlockType::Sign(_)
             | BlockType::Banner(_)
+            | BlockType::Chest(_)
             | BlockType::BlockEntity => {
                 emit_parts(self, block, origin, layer_of, visible);
             }
@@ -364,6 +365,12 @@ mod tests {
                     "textures": { "particle": "oak_planks" },
                     "elements_from": null
                 },
+                "shulker_box": {
+                    "file_name": "shulker_box.json",
+                    "parent": null,
+                    "textures": { "particle": "shulker_box" },
+                    "elements_from": null
+                },
                 "cross": {
                     "file_name": "cross.json",
                     "parent": null,
@@ -512,6 +519,25 @@ mod tests {
     }
 
     #[test]
+    fn chest_draws_its_boxes_from_atlas_tiles() {
+        let (dir, library) = library();
+        let block = resolve_block(&library, "minecraft:chest", BTreeMap::new());
+        assert!(matches!(block.block_type(), BlockType::Chest(_)));
+        assert!(
+            block
+                .texture_keys()
+                .contains(&"chest_normal_lid_up".to_owned())
+        );
+        // Base, lid and lock, five drawn faces each.
+        let mesh = place_once(&block, IVec3::new(2, 0, 0));
+        assert_eq!(mesh.vertices.len(), 60);
+        let (min, max) = bounds(&mesh);
+        assert!(min.x > 2.0 && min.y >= 0.0 && min.z >= 0.0);
+        assert!(max.x < 3.0 && max.y < 1.0 && max.z < 1.0);
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
     fn invisible_places_nothing() {
         let (dir, library) = library();
         let block = resolve_block(&library, "minecraft:air", BTreeMap::new());
@@ -525,9 +551,9 @@ mod tests {
     #[test]
     fn block_entity_placeholder_is_inset_inside_the_cell() {
         let (dir, library) = library();
-        let block = resolve_block(&library, "minecraft:chest", BTreeMap::new());
+        let block = resolve_block(&library, "minecraft:shulker_box", BTreeMap::new());
         assert_eq!(block.block_type(), BlockType::BlockEntity);
-        assert_eq!(block.particle_texture(), Some("oak_planks"));
+        assert_eq!(block.particle_texture(), Some("shulker_box"));
         let mesh = place_once(&block, IVec3::new(2, 0, 0));
         assert_eq!(mesh.vertices.len(), 24);
         let (min, max) = bounds(&mesh);

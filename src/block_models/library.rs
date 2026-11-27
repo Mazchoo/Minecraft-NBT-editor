@@ -8,11 +8,11 @@ use std::time::SystemTime;
 
 use crate::config::Config;
 use crate::constants::{AXIS_PROPERTY, FACING_PROPERTY};
-use crate::textures::JarError;
+use crate::import::jar::JarError;
+use crate::import::jar::models::import_into_cache;
 
 use super::block_definition::{AppliedModel, BlockDefinition};
 use super::block_model::BlockModel;
-use super::jar::import_into_cache;
 use super::model_json::{ModelElement, ModelFace, ModelFile, ModelRotation, asset_stem};
 
 /// Guards against parent cycles in a modified jar.

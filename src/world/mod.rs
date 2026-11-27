@@ -1,5 +1,4 @@
 mod block_state;
-pub mod structure;
 
 use std::collections::HashMap;
 

@@ -196,13 +196,21 @@ mod tests {
         let elements = BannerKind::Standing.elements(&BTreeMap::new(), "oak_planks", "red_wool");
         assert_eq!(elements.len(), 3);
         let flag = &elements[0];
-        assert!(flag.faces().iter().flatten().all(|f| f.texture() == "red_wool"));
+        assert!(
+            flag.faces()
+                .iter()
+                .flatten()
+                .all(|f| f.texture() == "red_wool")
+        );
         let (flag_min, flag_max) = bounds(flag);
         let (pole_min, pole_max) = bounds(&elements[1]);
         assert!(close(pole_min.y, 0.0) && close(pole_max.y, 28.0));
         assert!(close(flag_max.y, 28.0 + BAR_HEIGHT));
         assert!(flag_min.y > 0.0, "the flag stops short of the ground");
-        assert!(flag_min.z >= pole_max.z - 1e-3, "the flag hangs to the south");
+        assert!(
+            flag_min.z >= pole_max.z - 1e-3,
+            "the flag hangs to the south"
+        );
         // 8 = north: the flag swings round to the other side of the pole.
         let elements =
             BannerKind::Standing.elements(&props("rotation", "8"), "oak_planks", "red_wool");
@@ -219,7 +227,10 @@ mod tests {
             (bounds(&elements[0]), bounds(&elements[1]))
         };
         let ((flag_min, flag_max), (bar_min, bar_max)) = side("south");
-        assert!(bar_min.z > 0.0 && bar_max.z < 2.0, "bar sits on the north side");
+        assert!(
+            bar_min.z > 0.0 && bar_max.z < 2.0,
+            "bar sits on the north side"
+        );
         assert!(flag_min.z >= bar_max.z - 1e-3 && flag_max.z < 3.0);
         assert!(flag_min.y < 0.0, "the flag hangs into the cell below");
         assert!(close(flag_max.y, bar_max.y));

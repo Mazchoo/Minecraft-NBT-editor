@@ -40,6 +40,16 @@ pub const PROPERTY_VALUE_SETS: [&[&str]; 4] = [
 /// Blockstate property naming the direction a block points.
 pub const FACING_PROPERTY: &str = "facing";
 
+/// Blockstate property naming which half of a double chest a block is.
+pub const CHEST_TYPE_PROPERTY: &str = "type";
+
+/// Side length, in texels, of the layout chest atlases are drawn on. A larger
+/// atlas is the same layout scaled up.
+pub const CHEST_ATLAS_SIZE: u32 = 64;
+
+/// Prefix of the texture keys of tiles cut from chest atlases.
+pub const CHEST_TILE_PREFIX: &str = "chest";
+
 /// Namespace assumed for a block id written without one, as Minecraft does.
 pub const DEFAULT_NAMESPACE: &str = "minecraft";
 
