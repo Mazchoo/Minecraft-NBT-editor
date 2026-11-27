@@ -20,6 +20,11 @@ impl FaceHit {
     pub fn placement_cell(self) -> IVec3 {
         self.cell + self.face.offset()
     }
+
+    /// World-space centre of the hit face.
+    pub fn face_centre(self) -> Vec3 {
+        self.cell.as_vec3() + Vec3::splat(0.5) + self.face.offset().as_vec3() * 0.5
+    }
 }
 
 /// Nearest hit along `origin + t * dir` (`dir` need not be normalised, `t > 0`).

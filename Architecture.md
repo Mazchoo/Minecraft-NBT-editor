@@ -70,6 +70,8 @@ An `egui` widget whose pixels are produced by a `wgpu` render pass injected thro
 - **Mouse drag**: turntable orbit around the focus point. Horizontal drag rotates
   the yaw, vertical drag tilts the pitch (clamped short of the poles to avoid
   flipping).
+- **Middle double-click**: moves the camera to two blocks out from the face under
+  the cursor, looking straight at the centre of that face.
 
 ---
 

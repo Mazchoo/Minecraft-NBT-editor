@@ -72,6 +72,16 @@ impl Viewport {
             aspect,
         );
 
+        // Middle double-click: snap the camera square-on to the face under
+        // the cursor.
+        if response.double_clicked_by(egui::PointerButton::Middle)
+            && let Some(pos) = response.interact_pointer_pos()
+            && let Some(target) = face_at(&self.camera, pos, rect, aspect, world)
+        {
+            self.camera
+                .view_face(target.face_centre(), target.face.offset().as_vec3());
+        }
+
         let hit = placement_hit(placing, &self.camera, &response, rect, aspect, world);
 
         if e_pressed(ui) {
@@ -165,6 +175,17 @@ fn placement_hit(
     } else {
         response.hover_pos()
     }?;
+    face_at(camera, pos, rect, aspect, world)
+}
+
+/// The face under screen position `pos`, if it is inside the viewport.
+fn face_at(
+    camera: &Camera,
+    pos: egui::Pos2,
+    rect: egui::Rect,
+    aspect: f32,
+    world: &World,
+) -> Option<FaceHit> {
     if !rect.contains(pos) {
         return None;
     }

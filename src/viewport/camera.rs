@@ -40,12 +40,36 @@ impl Camera {
         Vec3::new(cos_pitch * sin_yaw, sin_pitch, -cos_pitch * cos_yaw)
     }
 
+    /// Horizontal unit vector pointing to the camera's right for `yaw`.
+    fn right_for_yaw(yaw: f32) -> Vec3 {
+        Vec3::new(yaw.cos(), 0.0, yaw.sin())
+    }
+
+    /// The camera's up direction. Derived from yaw and pitch rather than
+    /// world +Y so it stays defined when looking straight up or down.
+    fn up(&self) -> Vec3 {
+        Self::right_for_yaw(self.yaw).cross(self.forward())
+    }
+
     pub fn eye(&self) -> Vec3 {
         self.focus - self.forward() * self.distance
     }
 
+    /// Looks straight at the point `centre` of a face from
+    /// `Config::FACE_VIEW_DISTANCE` blocks out along its outward `normal`.
+    /// A horizontal face keeps the current yaw.
+    pub fn view_face(&mut self, centre: Vec3, normal: Vec3) {
+        let forward = -normal;
+        self.focus = centre;
+        self.distance = Config::FACE_VIEW_DISTANCE;
+        self.pitch = forward.y.clamp(-1.0, 1.0).asin();
+        if forward.x != 0.0 || forward.z != 0.0 {
+            self.yaw = forward.x.atan2(-forward.z);
+        }
+    }
+
     pub fn view_proj(&self, aspect: f32) -> Mat4 {
-        let view = glam::camera::rh::view::look_at_mat4(self.eye(), self.focus, Vec3::Y);
+        let view = glam::camera::rh::view::look_at_mat4(self.eye(), self.focus, self.up());
         // The directx projection maps depth to [0, 1], matching wgpu clip space.
         let proj = glam::camera::rh::proj::directx::perspective(self.fov_y, aspect, 0.1, 5000.0);
         proj * view
@@ -111,8 +135,11 @@ impl Camera {
             let focus_offset = self.focus - pivot;
             let (eye_offset, focus_offset) =
                 Self::update_offsets_from_yaw(eye_offset, focus_offset, drag_yaw);
+            // Taken from yaw, not from the look direction, so the tilt axis
+            // is defined when the camera starts out looking straight down.
+            let right = Self::right_for_yaw(self.yaw + drag_yaw);
             let (eye_offset, focus_offset) =
-                Self::update_offsets_from_pitch(eye_offset, focus_offset, drag_pitch);
+                Self::update_offsets_from_pitch(eye_offset, focus_offset, right, drag_pitch);
             self.recalculate_camera_from_offsets(pivot, eye_offset, focus_offset);
         }
 
@@ -135,16 +162,12 @@ impl Camera {
     fn update_offsets_from_pitch(
         eye_offset: Vec3,
         focus_offset: Vec3,
+        right: Vec3,
         drag_pitch: f32,
     ) -> (Vec3, Vec3) {
         if drag_pitch == 0.0 {
             return (eye_offset, focus_offset);
         }
-        let look = (focus_offset - eye_offset).normalize_or(Vec3::NEG_Z);
-        let right = look
-            .cross(Vec3::Y)
-            .try_normalize()
-            .unwrap_or_else(|| Vec3::new(eye_offset.z, 0.0, -eye_offset.x).normalize_or(Vec3::X));
         Self::rotate_offsets(
             eye_offset,
             focus_offset,

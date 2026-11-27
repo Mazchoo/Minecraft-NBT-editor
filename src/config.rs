@@ -50,6 +50,10 @@ impl Config {
     /// structure, so a single block is not viewed from up close.
     pub const MIN_FRAME_DISTANCE: f32 = 4.0;
 
+    /// Distance, in blocks, the camera sits from a face it is snapped to
+    /// look at by a middle double-click.
+    pub const FACE_VIEW_DISTANCE: f32 = 2.0;
+
     /// Blocks per second the camera moves while a WASD key is held.
     pub const PAN_SPEED: f32 = 24.0;
 
