@@ -288,11 +288,32 @@ impl Block {
     pub fn from_resolved(name: impl Into<String>, resolved: &ResolvedBlock) -> Self {
         let name = name.into();
         let properties = resolved.properties.clone();
-        let rotation = StateRotation::from_properties(&properties);
-        let has_geometry = resolved.parts.iter().any(|part| !part.block_entity);
+        // The blockstate's own rotation applies unless `axis` or `facing`
+        // turns a block whose definition does not read them (5.6).
+        let property_rotation = if resolved.property_rotation {
+            StateRotation::from_properties(&properties)
+        } else {
+            StateRotation::IDENTITY
+        };
+        let orientation = |part: &ResolvedPart| {
+            if property_rotation.is_identity() {
+                (StateRotation::new(part.x, part.y), part.uvlock)
+            } else {
+                (property_rotation, false)
+            }
+        };
+        // A definition that draws no model for this state is not a block
+        // entity: it has geometry, and none of it applies.
+        let has_geometry =
+            resolved.parts.is_empty() || resolved.parts.iter().any(|part| !part.block_entity);
         let mut block_type =
             BlockType::classify(&name, resolved.parent_stem.as_deref(), has_geometry);
-        if matches!(block_type, BlockType::Basic(_)) && !rotation.is_identity() {
+        if matches!(block_type, BlockType::Basic(_))
+            && resolved
+                .parts
+                .iter()
+                .any(|part| !orientation(part).0.is_identity())
+        {
             // Oriented cubes (e.g. `axis=x` pillars) take the general path in 5.6.
             block_type = BlockType::Elements;
         }
@@ -341,12 +362,18 @@ impl Block {
                     .map(|part| part.model.as_str())
                     .unwrap_or("missing"),
                 particle_texture.as_deref(),
-                rotation,
+                resolved
+                    .parts
+                    .first()
+                    .map_or(property_rotation, |part| orientation(part).0),
             )],
             BlockType::Basic(_) | BlockType::Elements => resolved
                 .parts
                 .iter()
-                .map(|part| BlockPart::from_resolved(part, rotation))
+                .map(|part| {
+                    let (rotation, uvlock) = orientation(part);
+                    BlockPart::from_resolved(part, rotation, uvlock)
+                })
                 .collect(),
         };
 
@@ -478,7 +505,7 @@ impl Block {
 }
 
 impl BlockPart {
-    fn from_resolved(part: &ResolvedPart, rotation: StateRotation) -> Self {
+    fn from_resolved(part: &ResolvedPart, rotation: StateRotation, uvlock: bool) -> Self {
         let elements = if part.block_entity {
             placeholder_elements(None)
         } else {
@@ -488,7 +515,7 @@ impl BlockPart {
             model: part.model.clone(),
             elements,
             rotation,
-            uvlock: false,
+            uvlock,
         }
     }
 

@@ -16,16 +16,20 @@ pub struct BlockState {
 impl BlockState {
     /// The default state of block `id`. An id without a namespace, such as a
     /// right-sidebar model stem, is taken to be in `minecraft`.
+    #[cfg(test)]
     pub fn default_of(id: &str) -> Self {
+        Self::new(id, BTreeMap::new())
+    }
+
+    /// The state of block `id` with `properties`. An id without a namespace
+    /// is taken to be in `minecraft`.
+    pub fn new(id: &str, properties: BTreeMap<String, String>) -> Self {
         let name = if id.contains(':') {
             id.to_owned()
         } else {
             format!("{DEFAULT_NAMESPACE}:{id}")
         };
-        Self {
-            name,
-            properties: BTreeMap::new(),
-        }
+        Self { name, properties }
     }
 }
 

@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Duration;
@@ -14,7 +15,7 @@ use crate::ui::left_panel::{self, Tool};
 use crate::ui::ribbon;
 use crate::ui::right_panel;
 use crate::viewport::Viewport;
-use crate::world::{World, structure};
+use crate::world::{BlockState, World, structure};
 
 struct PendingJarImport {
     path: PathBuf,
@@ -25,6 +26,13 @@ pub struct App {
     active_tool: Tool,
     search_text: String,
     selected_block: Option<String>,
+    /// Every state of [`Self::selected_block`], and the one a click places.
+    variants: Vec<BTreeMap<String, String>>,
+    variant_index: usize,
+    /// The block `variants` was listed for. `None` forces a new listing.
+    variants_block: Option<String>,
+    /// Tab presses not yet applied: +1 each, -1 with Shift.
+    variant_steps: i32,
     viewport: Viewport,
     world: World,
     history: History,
@@ -37,16 +45,27 @@ impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let textures = TextureLibrary::load();
         rendering::init(cc, &textures);
+        let models = ModelLibrary::load();
+        if models.needs_reimport() {
+            log::warn!(
+                "{} is missing; blocks without a model of their own name draw as fallback cubes until File > Set Minecraft Jar is run again",
+                Config::blockstates_manifest_path().display()
+            );
+        }
 
         Self {
             active_tool: Tool::Place,
             search_text: String::new(),
             selected_block: None,
+            variants: Vec::new(),
+            variant_index: 0,
+            variants_block: None,
+            variant_steps: 0,
             viewport: Viewport::new(),
             world: World::new(),
             history: History::new(CONFIG.undo_history_limit()),
             textures,
-            models: ModelLibrary::load(),
+            models,
             jar_import: None,
         }
     }
@@ -67,13 +86,15 @@ impl App {
                 match result {
                     Ok(imported) => {
                         log::info!(
-                            "imported {} block textures and {} block models from {}",
+                            "imported {} block textures, {} block models and {} blockstates from {}",
                             imported.textures.len(),
                             imported.models.len(),
+                            imported.definitions.len(),
                             path.display()
                         );
                         self.textures.apply_import(imported.textures);
-                        self.models.apply_import(imported.models);
+                        self.models
+                            .apply_import(imported.models, imported.definitions);
                         self.prune_selected_block();
                         self.world.mark_dirty();
                     }
@@ -96,12 +117,47 @@ impl App {
         }
     }
 
+    /// Drops a selection the reloaded caches no longer list, and lists the
+    /// variants again in case they changed.
     fn prune_selected_block(&mut self) {
         if let Some(selected) = &self.selected_block
-            && self.models.get_record(selected).is_none()
+            && !self.models.has_block(selected)
         {
             self.selected_block = None;
         }
+        self.variants_block = None;
+    }
+
+    /// Lists the variants of a newly selected block, then applies pending
+    /// Tab presses, wrapping at either end.
+    fn update_variant(&mut self) {
+        if self.variants_block != self.selected_block {
+            (self.variants, self.variant_index) = match &self.selected_block {
+                Some(block) => self.models.variants(block),
+                None => (Vec::new(), 0),
+            };
+            self.variants_block = self.selected_block.clone();
+        }
+        let steps = std::mem::take(&mut self.variant_steps);
+        if !self.variants.is_empty() {
+            let count = self.variants.len() as i64;
+            self.variant_index =
+                (self.variant_index as i64 + steps as i64).rem_euclid(count) as usize;
+        }
+    }
+
+    /// Variant `offset` steps from the current one, wrapping.
+    fn variant_at(&self, offset: i64) -> Option<&BTreeMap<String, String>> {
+        let count = self.variants.len() as i64;
+        (count > 0).then(|| {
+            &self.variants[(self.variant_index as i64 + offset).rem_euclid(count) as usize]
+        })
+    }
+
+    /// The block state a click places: the selected block in its current variant.
+    fn selected_state(&self) -> Option<BlockState> {
+        let block = self.selected_block.as_deref()?;
+        Some(BlockState::new(block, self.variant_at(0)?.clone()))
     }
 
     fn start_jar_import(&mut self, path: PathBuf) {
@@ -112,6 +168,7 @@ impl App {
         let model_cache = self.models.cache_dir().to_path_buf();
         let textures_manifest = Config::textures_manifest_path();
         let models_manifest = Config::models_manifest_path();
+        let blockstates_manifest = Config::blockstates_manifest_path();
         let jar_path = path.clone();
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
@@ -121,6 +178,7 @@ impl App {
                 &model_cache,
                 &textures_manifest,
                 &models_manifest,
+                &blockstates_manifest,
             ));
         });
         self.jar_import = Some(PendingJarImport { path, rx });
@@ -159,7 +217,41 @@ impl App {
     }
 }
 
+/// How a variant is shown in the hotbar: `axis=x, half=top`.
+fn variant_label(properties: &BTreeMap<String, String>) -> String {
+    if properties.is_empty() {
+        return "default".to_owned();
+    }
+    properties
+        .iter()
+        .map(|(name, value)| format!("{name}={value}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 impl eframe::App for App {
+    /// Takes Tab and Shift+Tab for variant cycling before egui uses them to
+    /// move keyboard focus. Left alone while a text field is being typed in.
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        if ctx.egui_wants_keyboard_input() {
+            return;
+        }
+        raw_input.events.retain(|event| match event {
+            egui::Event::Key {
+                key: egui::Key::Tab,
+                pressed,
+                modifiers,
+                ..
+            } => {
+                if *pressed {
+                    self.variant_steps += if modifiers.shift { -1 } else { 1 };
+                }
+                false
+            }
+            _ => true,
+        });
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.poll_jar_import();
         self.poll_model_manifest();
@@ -168,7 +260,7 @@ impl eframe::App for App {
         let import_busy = self.jar_import.is_some();
 
         egui::Panel::top("ribbon").resizable(false).show(ui, |ui| {
-            match ribbon::show(ui, import_busy) {
+            match ribbon::show(ui, import_busy, self.models.needs_reimport()) {
                 Some(ribbon::Action::SetJar(path)) => self.start_jar_import(path),
                 Some(ribbon::Action::ImportNbt(path)) => self.import_nbt(&path),
                 None => return,
@@ -190,18 +282,35 @@ impl eframe::App for App {
                     ui,
                     &mut self.search_text,
                     &mut self.selected_block,
-                    self.models.names(),
+                    self.models.block_names(),
                 );
             });
+        self.update_variant();
+        let selected_state = self.selected_state();
 
         egui::Panel::bottom("hotbar").show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(format!("Tool: {}", self.active_tool.name()));
                 ui.separator();
-                ui.label(match &self.selected_block {
-                    Some(block) => format!("Block: {block}"),
-                    None => "Block: none".to_owned(),
+                ui.label(match (&self.selected_block, self.variant_at(0)) {
+                    (Some(block), Some(variant)) if self.variants.len() > 1 => format!(
+                        "Block: {block} [{}] ({}/{})",
+                        variant_label(variant),
+                        self.variant_index + 1,
+                        self.variants.len()
+                    ),
+                    (Some(block), _) => format!("Block: {block}"),
+                    (None, _) => "Block: none".to_owned(),
                 });
+                if self.variants.len() > 1
+                    && let (Some(previous), Some(next)) = (self.variant_at(-1), self.variant_at(1))
+                {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(format!("Tab: {}", variant_label(next)));
+                        ui.separator();
+                        ui.label(format!("Shift+Tab: {}", variant_label(previous)));
+                    });
+                }
             });
         });
 
@@ -213,7 +322,7 @@ impl eframe::App for App {
                     &mut self.world,
                     &mut self.history,
                     self.active_tool == Tool::Place,
-                    self.selected_block.as_deref(),
+                    selected_state.as_ref(),
                     &self.models,
                     &self.textures,
                 );

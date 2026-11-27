@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use crate::textures::JarError;
 
+use super::block_definition::BlockDefinition;
 use super::block_model::BlockModel;
 use super::model_json::asset_stem;
 
@@ -75,6 +76,16 @@ pub(crate) fn import_into_cache(
 
 /// Matches `assets/{namespace}/models/block/{file}.json`. Nested paths are rejected.
 pub(crate) fn match_block_model(entry_name: &str) -> Option<String> {
+    match_json_asset(entry_name, &["models", "block"])
+}
+
+/// Matches `assets/{namespace}/blockstates/{file}.json`. Nested paths are rejected.
+pub(crate) fn match_blockstate(entry_name: &str) -> Option<String> {
+    match_json_asset(entry_name, &["blockstates"])
+}
+
+/// Matches `assets/{namespace}/{folders...}/{file}.json` and returns the file name.
+fn match_json_asset(entry_name: &str, folders: &[&str]) -> Option<String> {
     let name = if entry_name.contains('\\') {
         Cow::Owned(entry_name.replace('\\', "/"))
     } else {
@@ -83,16 +94,16 @@ pub(crate) fn match_block_model(entry_name: &str) -> Option<String> {
     let mut parts = name.split('/');
     let assets = parts.next()?;
     let namespace = parts.next()?;
-    let models = parts.next()?;
-    let block = parts.next()?;
+    for folder in folders {
+        if parts.next()? != *folder {
+            return None;
+        }
+    }
     let file = parts.next()?;
     if parts.next().is_some() {
         return None;
     }
-    if assets != "assets" || models != "models" || block != "block" {
-        return None;
-    }
-    if namespace.is_empty() || file.is_empty() || file.contains("..") {
+    if assets != "assets" || namespace.is_empty() || file.is_empty() || file.contains("..") {
         return None;
     }
     let (_, ext) = file.rsplit_once('.')?;
@@ -100,6 +111,20 @@ pub(crate) fn match_block_model(entry_name: &str) -> Option<String> {
         return None;
     }
     Some(file.to_owned())
+}
+
+/// Parses a blockstate JSON and returns `(block stem, definition)`.
+pub(crate) fn ingest_blockstate(
+    file_name: &str,
+    bytes: &[u8],
+) -> Option<(String, BlockDefinition)> {
+    match BlockDefinition::from_json(bytes) {
+        Ok(definition) => Some((file_stem(file_name), definition)),
+        Err(err) => {
+            log::warn!("failed to parse blockstate {file_name}: {err}");
+            None
+        }
+    }
 }
 
 /// Parses a model JSON, writes it to the cache, and returns `(stem, record, has_elements)`.
@@ -194,7 +219,10 @@ pub(crate) fn remove_stale_cache_files(cache_dir: &Path, models: &HashMap<String
         let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
-        if name == crate::constants::MODELS_MANIFEST_FILE || keep.contains(name) {
+        if name == crate::constants::MODELS_MANIFEST_FILE
+            || name == crate::constants::BLOCKSTATES_MANIFEST_FILE
+            || keep.contains(name)
+        {
             continue;
         }
         if let Err(err) = fs::remove_file(&path) {
@@ -230,6 +258,24 @@ pub(crate) fn write_manifest(
     file.flush()?;
     file.sync_all()?;
     Ok(path.to_path_buf())
+}
+
+/// Writes every blockstate definition into one manifest, keyed by block stem.
+pub(crate) fn write_blockstates_manifest(
+    path: &Path,
+    definitions: &HashMap<String, BlockDefinition>,
+) -> Result<(), JarError> {
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent)?;
+    }
+    let mut file = File::create(path)?;
+    let ordered: BTreeMap<_, _> = definitions.iter().collect();
+    serde_json::to_writer(&mut file, &ordered)?;
+    file.flush()?;
+    file.sync_all()?;
+    Ok(())
 }
 
 /// Lightweight header used at extraction time so malformed `elements` do not drop the model.

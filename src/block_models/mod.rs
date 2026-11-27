@@ -1,11 +1,14 @@
+mod block_definition;
 mod block_model;
 mod jar;
 mod library;
 mod model_json;
 
+pub use block_definition::BlockDefinition;
 pub use block_model::BlockModel;
 pub(crate) use jar::{
-    fill_elements_from, ingest_model, match_block_model, remove_stale_cache_files, write_manifest,
+    fill_elements_from, ingest_blockstate, ingest_model, match_block_model, match_blockstate,
+    remove_stale_cache_files, write_blockstates_manifest, write_manifest,
 };
 pub use library::ModelLibrary;
 #[allow(unused_imports)]

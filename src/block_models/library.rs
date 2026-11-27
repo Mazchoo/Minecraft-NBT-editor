@@ -7,8 +7,10 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use crate::config::Config;
+use crate::constants::{AXIS_PROPERTY, FACING_PROPERTY};
 use crate::textures::JarError;
 
+use super::block_definition::{AppliedModel, BlockDefinition};
 use super::block_model::BlockModel;
 use super::jar::import_into_cache;
 use super::model_json::{ModelElement, ModelFace, ModelFile, ModelRotation, asset_stem};
@@ -25,6 +27,13 @@ pub struct ModelLibrary {
     names: Vec<String>,
     /// Last observed mtime of [`Self::manifest_path`]. `None` if the file is missing.
     manifest_mtime: Option<SystemTime>,
+    definitions_path: PathBuf,
+    /// Blockstate definitions by block stem.
+    definitions: HashMap<String, BlockDefinition>,
+    /// Sorted block stems for the picker, rebuilt with the dictionaries.
+    block_names: Vec<String>,
+    /// Last observed mtime of [`Self::definitions_path`].
+    definitions_mtime: Option<SystemTime>,
     resolved: RefCell<HashMap<ResolveKey, Arc<ResolvedBlock>>>,
 }
 
@@ -46,6 +55,9 @@ pub struct ResolvedBlock {
     /// The chain block's texture, set only for hanging signs, which draw chains
     /// their own model does not describe.
     pub chain_texture: Option<String>,
+    /// True when the block's definition does not orient it by `axis` or
+    /// `facing`, so those properties turn it by the fixed table instead.
+    pub property_rotation: bool,
     pub parts: Vec<ResolvedPart>,
 }
 
@@ -58,6 +70,10 @@ pub struct ResolvedPart {
     pub elements: Vec<ResolvedElement>,
     /// True when the chain has no geometry (block-entity placeholder).
     pub block_entity: bool,
+    /// Rotation the blockstate gives this model, in degrees.
+    pub x: u16,
+    pub y: u16,
+    pub uvlock: bool,
 }
 
 /// An element whose face textures are already `TextureLibrary` keys (or empty).
@@ -88,28 +104,38 @@ impl ModelLibrary {
         Self::from_paths(
             Config::model_cache_dir().to_path_buf(),
             Config::models_manifest_path(),
+            Config::blockstates_manifest_path(),
         )
     }
 
-    fn from_paths(cache_dir: PathBuf, manifest_path: PathBuf) -> Self {
+    fn from_paths(cache_dir: PathBuf, manifest_path: PathBuf, definitions_path: PathBuf) -> Self {
         let models = load_manifest(&manifest_path);
         let names = sorted_names(&models);
         let manifest_mtime = file_mtime(&manifest_path);
-        Self {
+        let definitions = try_load_definitions(&definitions_path).unwrap_or_default();
+        let definitions_mtime = file_mtime(&definitions_path);
+        let mut library = Self {
             cache_dir,
             manifest_path,
             models,
             names,
             manifest_mtime,
+            definitions_path,
+            definitions,
+            block_names: Vec::new(),
+            definitions_mtime,
             resolved: RefCell::new(HashMap::new()),
-        }
+        };
+        library.rebuild_block_names();
+        library
     }
 
     #[cfg(test)]
     pub(crate) fn from_cache_dir(cache_dir: impl Into<PathBuf>) -> Self {
         let cache_dir = cache_dir.into();
         let manifest_path = cache_dir.join(crate::constants::MODELS_MANIFEST_FILE);
-        Self::from_paths(cache_dir, manifest_path)
+        let definitions_path = cache_dir.join(crate::constants::BLOCKSTATES_MANIFEST_FILE);
+        Self::from_paths(cache_dir, manifest_path, definitions_path)
     }
 
     /// Extracts block models from a Minecraft client jar into the cache and rewrites the manifest.
@@ -117,7 +143,8 @@ impl ModelLibrary {
     pub fn import_jar(&mut self, jar_path: &Path) -> Result<usize, JarError> {
         let models = import_into_cache(jar_path, &self.cache_dir)?;
         let count = models.len();
-        self.apply_import(models);
+        self.replace_models(models);
+        self.manifest_mtime = file_mtime(&self.manifest_path);
         Ok(count)
     }
 
@@ -125,16 +152,44 @@ impl ModelLibrary {
         &self.cache_dir
     }
 
-    pub(crate) fn apply_import(&mut self, models: HashMap<String, BlockModel>) {
+    pub(crate) fn apply_import(
+        &mut self,
+        models: HashMap<String, BlockModel>,
+        definitions: HashMap<String, BlockDefinition>,
+    ) {
         self.replace_models(models);
         self.manifest_mtime = file_mtime(&self.manifest_path);
+        self.replace_definitions(definitions);
+        self.definitions_mtime = file_mtime(&self.definitions_path);
     }
 
-    /// Reloads the dictionary when `_models.cache.json` appears, disappears, or is rewritten.
+    /// Reloads the dictionaries when `_models.cache.json` or
+    /// `_blockstates.cache.json` appears, disappears, or is rewritten.
     ///
     /// A parse or I/O error leaves the current dictionary in place so a partial write
     /// (for example during jar import) does not empty the sidebar.
     pub fn reload_if_changed(&mut self) -> bool {
+        let models_changed = self.reload_models_if_changed();
+        let definitions_changed = self.reload_definitions_if_changed();
+        models_changed || definitions_changed
+    }
+
+    fn reload_definitions_if_changed(&mut self) -> bool {
+        let mtime = file_mtime(&self.definitions_path);
+        if mtime == self.definitions_mtime {
+            return false;
+        }
+        let definitions = match try_load_definitions(&self.definitions_path) {
+            Ok(definitions) => definitions,
+            Err(ManifestError::NotFound) => HashMap::new(),
+            Err(ManifestError::Failed) => return false,
+        };
+        self.definitions_mtime = mtime;
+        self.replace_definitions(definitions);
+        true
+    }
+
+    fn reload_models_if_changed(&mut self) -> bool {
         let mtime = file_mtime(&self.manifest_path);
         if mtime == self.manifest_mtime {
             return false;
@@ -154,13 +209,47 @@ impl ModelLibrary {
         }
     }
 
-    /// Sorted model stems from the cache, used as the block picker list.
-    pub fn names(&self) -> &[String] {
-        &self.names
+    /// Sorted block stems for the picker, one per block whatever its
+    /// variants. A cache imported before blockstates were kept has no
+    /// definitions and lists its model stems instead.
+    pub fn block_names(&self) -> &[String] {
+        &self.block_names
     }
 
+    #[cfg(test)]
     pub fn get_record(&self, key: &str) -> Option<&BlockModel> {
         self.models.get(key)
+    }
+
+    /// True when models are cached but blockstates are not: the cache was
+    /// imported before blockstates were kept, and the jar must be set again
+    /// for blocks to find their models by name.
+    pub fn needs_reimport(&self) -> bool {
+        self.definitions.is_empty() && !self.models.is_empty()
+    }
+
+    /// Whether `block` is one of [`Self::block_names`].
+    pub fn has_block(&self, block: &str) -> bool {
+        if self.definitions.is_empty() {
+            self.models.contains_key(block)
+        } else {
+            self.definitions.contains_key(block)
+        }
+    }
+
+    /// Every state `block` can be placed in, as property maps, and the index
+    /// of the one a newly picked block starts in. A block without a
+    /// definition has only its default state.
+    pub fn variants(&self, block: &str) -> (Vec<BTreeMap<String, String>>, usize) {
+        let Some(definition) = self.definitions.get(block) else {
+            return (vec![BTreeMap::new()], 0);
+        };
+        let mut variants = definition.variants(Config::MAX_BLOCK_VARIANTS);
+        if variants.is_empty() {
+            variants.push(BTreeMap::new());
+        }
+        let start = definition.default_variant(&variants);
+        (variants, start)
     }
 
     pub fn len(&self) -> usize {
@@ -175,7 +264,24 @@ impl ModelLibrary {
     fn replace_models(&mut self, models: HashMap<String, BlockModel>) {
         self.models = models;
         self.names = sorted_names(&self.models);
+        self.rebuild_block_names();
         self.resolved.borrow_mut().clear();
+    }
+
+    fn replace_definitions(&mut self, definitions: HashMap<String, BlockDefinition>) {
+        self.definitions = definitions;
+        self.rebuild_block_names();
+        self.resolved.borrow_mut().clear();
+    }
+
+    fn rebuild_block_names(&mut self) {
+        self.block_names = if self.definitions.is_empty() {
+            self.names.clone()
+        } else {
+            let mut names: Vec<String> = self.definitions.keys().cloned().collect();
+            names.sort();
+            names
+        };
     }
 
     /// Resolves one NBT palette entry into geometry. Always returns a usable block;
@@ -198,60 +304,92 @@ impl ModelLibrary {
 
     fn resolve_uncached(&self, name: &str, properties: &BTreeMap<String, String>) -> ResolvedBlock {
         let stem = asset_stem(name);
-        // Wall signs have no model of their own: upstream, their blockstate
-        // points at the standing sign's model.
-        // Likewise every banner, of any colour, points at the one `banner` model.
-        let stem = match wall_sign_model_stem(&stem).or_else(|| banner_model_stem(&stem)) {
-            Some(shared) if !self.models.contains_key(&stem) => shared,
-            _ => stem,
+        let (applied, property_rotation): (Vec<AppliedModel>, bool) =
+            match self.definitions.get(&stem) {
+                Some(definition) => (
+                    definition.select(properties).into_iter().cloned().collect(),
+                    !definition.mentions(AXIS_PROPERTY) && !definition.mentions(FACING_PROPERTY),
+                ),
+                None => (
+                    vec![AppliedModel::unrotated(self.undefined_model_stem(&stem))],
+                    true,
+                ),
+            };
+
+        let mut block = ResolvedBlock {
+            properties: properties.clone(),
+            parent_stem: None,
+            particle_texture: None,
+            chain_texture: None,
+            property_rotation,
+            parts: Vec::with_capacity(applied.len()),
         };
-        let Some(record) = self.models.get(&stem) else {
+        for (index, model) in applied.iter().enumerate() {
+            let (part, parent_stem, particle_texture) = self.resolve_part(model);
+            if index == 0 {
+                block.particle_texture = particle_texture;
+                // Only a block made of one model can take a full-cube fast path.
+                if applied.len() == 1 {
+                    block.parent_stem = parent_stem;
+                }
+            }
+            block.parts.push(part);
+        }
+        if stem.ends_with("_hanging_sign")
+            && block.parts.first().is_some_and(|part| part.block_entity)
+        {
+            block.chain_texture = self.chain_texture();
+        }
+        block
+    }
+
+    /// Model for a block with no blockstate definition: the model of the
+    /// same name. Wall signs and banners have none of their own and share
+    /// the standing sign's model and the one `banner` model.
+    fn undefined_model_stem(&self, stem: &str) -> String {
+        match wall_sign_model_stem(stem).or_else(|| banner_model_stem(stem)) {
+            Some(shared) if !self.models.contains_key(stem) => shared,
+            _ => stem.to_owned(),
+        }
+    }
+
+    /// Resolves one model a blockstate applies. Returns the part with the
+    /// model's parent stem and `particle` texture. An unknown model or a
+    /// broken chain gives a full cube with the missing texture.
+    fn resolve_part(
+        &self,
+        applied: &AppliedModel,
+    ) -> (ResolvedPart, Option<String>, Option<String>) {
+        let stem = applied.model.as_str();
+        let part = |elements, block_entity| ResolvedPart {
+            model: stem.to_owned(),
+            elements,
+            block_entity,
+            x: applied.x,
+            y: applied.y,
+            uvlock: applied.uvlock,
+        };
+        let Some(record) = self.models.get(stem) else {
             log::warn!("model `{stem}` is not in the library; using fallback cube");
-            return fallback_cube(properties.clone());
+            return (fallback_part(), None, None);
         };
-
-        let Some(merged) = self.merge_textures(&stem) else {
+        let Some(merged) = self.merge_textures(stem) else {
             log::warn!("model `{stem}` parent chain exceeded depth limit; using fallback cube");
-            return fallback_cube(properties.clone());
+            return (fallback_part(), None, None);
         };
-
         let particle_texture = merged.get("particle").cloned();
         let parent_stem = record.parent().map(str::to_owned);
 
         let Some(elements_from) = record.elements_from() else {
-            return ResolvedBlock {
-                properties: properties.clone(),
-                parent_stem,
-                particle_texture,
-                chain_texture: stem
-                    .ends_with("_hanging_sign")
-                    .then(|| self.chain_texture())
-                    .flatten(),
-                parts: vec![ResolvedPart {
-                    model: stem,
-                    elements: Vec::new(),
-                    block_entity: true,
-                }],
-            };
+            return (part(Vec::new(), true), parent_stem, particle_texture);
         };
-
         match self.read_and_bind_elements(elements_from, &merged) {
-            Ok(elements) => ResolvedBlock {
-                properties: properties.clone(),
-                parent_stem,
-                particle_texture,
-                chain_texture: None,
-                parts: vec![ResolvedPart {
-                    model: stem,
-                    elements,
-                    block_entity: false,
-                }],
-            },
+            Ok(elements) => (part(elements, false), parent_stem, particle_texture),
             Err(err) => {
                 log::warn!(
                     "model `{stem}` geometry from `{elements_from}` could not be read: {err}; using fallback cube"
                 );
-                fallback_cube(properties.clone())
+                (fallback_part(), None, None)
             }
         }
     }
@@ -399,7 +537,8 @@ fn resolve_texture_ref(value: &str, merged: &BTreeMap<String, String>) -> Option
     }
 }
 
-fn fallback_cube(properties: BTreeMap<String, String>) -> ResolvedBlock {
+/// A full cube with the missing texture on every face.
+fn fallback_part() -> ResolvedPart {
     let face = ResolvedFace {
         texture: None,
         uv: None,
@@ -411,22 +550,19 @@ fn fallback_cube(properties: BTreeMap<String, String>) -> ResolvedBlock {
     for name in ["down", "up", "north", "south", "west", "east"] {
         faces.insert(name.to_owned(), face.clone());
     }
-    ResolvedBlock {
-        properties,
-        parent_stem: None,
-        particle_texture: None,
-        chain_texture: None,
-        parts: vec![ResolvedPart {
-            model: "missing".into(),
-            elements: vec![ResolvedElement {
-                from: [0.0, 0.0, 0.0],
-                to: [16.0, 16.0, 16.0],
-                rotation: None,
-                faces,
-                shade: true,
-            }],
-            block_entity: false,
+    ResolvedPart {
+        model: "missing".into(),
+        elements: vec![ResolvedElement {
+            from: [0.0, 0.0, 0.0],
+            to: [16.0, 16.0, 16.0],
+            rotation: None,
+            faces,
+            shade: true,
         }],
+        block_entity: false,
+        x: 0,
+        y: 0,
+        uvlock: false,
     }
 }
 
@@ -457,6 +593,26 @@ fn try_load_manifest(path: &Path) -> Result<HashMap<String, BlockModel>, Manifes
         Err(err) if err.kind() == io::ErrorKind::NotFound => Err(ManifestError::NotFound),
         Err(err) => {
             log::error!("failed to read model manifest {}: {err}", path.display());
+            Err(ManifestError::Failed)
+        }
+    }
+}
+
+fn try_load_definitions(path: &Path) -> Result<HashMap<String, BlockDefinition>, ManifestError> {
+    match fs::read_to_string(path) {
+        Ok(text) => serde_json::from_str(&text).map_err(|err| {
+            log::error!(
+                "failed to parse blockstate manifest {}: {err}",
+                path.display()
+            );
+            ManifestError::Failed
+        }),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Err(ManifestError::NotFound),
+        Err(err) => {
+            log::error!(
+                "failed to read blockstate manifest {}: {err}",
+                path.display()
+            );
             Err(ManifestError::Failed)
         }
     }
@@ -544,7 +700,7 @@ mod tests {
         let library = ModelLibrary::from_cache_dir(&dir);
         assert_eq!(library.len(), 4);
         assert_eq!(
-            library.names(),
+            library.block_names(),
             &[
                 "chest".to_owned(),
                 "cube".to_owned(),
@@ -569,7 +725,7 @@ mod tests {
         write_model_cache(&dir);
         let mut library = ModelLibrary::from_cache_dir(&dir);
         assert!(!library.reload_if_changed());
-        assert!(library.names().contains(&"stone".to_owned()));
+        assert!(library.block_names().contains(&"stone".to_owned()));
 
         fs::write(
             dir.join(crate::constants::MODELS_MANIFEST_FILE),
@@ -592,12 +748,12 @@ mod tests {
             .unwrap();
 
         assert!(library.reload_if_changed());
-        assert_eq!(library.names(), &["dirt".to_owned()]);
+        assert_eq!(library.block_names(), &["dirt".to_owned()]);
         assert!(!library.reload_if_changed());
 
         fs::remove_file(dir.join(crate::constants::MODELS_MANIFEST_FILE)).unwrap();
         assert!(library.reload_if_changed());
-        assert!(library.names().is_empty());
+        assert!(library.block_names().is_empty());
 
         fs::remove_dir_all(dir).ok();
     }
@@ -742,6 +898,106 @@ mod tests {
             "stone"
         );
 
+        fs::remove_dir_all(dir).ok();
+    }
+
+    fn write_definitions(dir: &Path) {
+        fs::write(
+            dir.join(crate::constants::BLOCKSTATES_MANIFEST_FILE),
+            r#"{
+                "pebble": {"variants": [
+                    {"properties": {"axis": "x"}, "apply": {"model": "stone", "x": 90, "y": 90}},
+                    {"properties": {"axis": "y"}, "apply": {"model": "stone"}}
+                ]},
+                "pair": {"multipart": [
+                    {"when": null, "apply": {"model": "stone"}},
+                    {"when": {"properties": {"on": ["true"]}},
+                     "apply": {"model": "chest", "y": 180, "uvlock": true}}
+                ]}
+            }"#,
+        )
+        .unwrap();
+    }
+
+    fn props(name: &str, value: &str) -> BTreeMap<String, String> {
+        BTreeMap::from([(name.to_owned(), value.to_owned())])
+    }
+
+    #[test]
+    fn block_resolves_through_its_definition_to_differently_named_models() {
+        let dir = temp_dir("model-library-definitions");
+        write_model_cache(&dir);
+        write_definitions(&dir);
+        let library = ModelLibrary::from_cache_dir(&dir);
+
+        let upright = library.resolve("minecraft:pebble", &props("axis", "y"));
+        assert_eq!(upright.parts.len(), 1);
+        assert_eq!(upright.parts[0].model, "stone");
+        assert_eq!(upright.parent_stem.as_deref(), Some("cube_all"));
+        assert_eq!(upright.particle_texture.as_deref(), Some("stone"));
+        // The definition reads `axis`, so it orients the block itself.
+        assert!(!upright.property_rotation);
+
+        let sideways = library.resolve("minecraft:pebble", &props("axis", "x"));
+        assert_eq!((sideways.parts[0].x, sideways.parts[0].y), (90, 90));
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn multipart_block_resolves_one_part_per_case_that_holds() {
+        let dir = temp_dir("model-library-multipart");
+        write_model_cache(&dir);
+        write_definitions(&dir);
+        let library = ModelLibrary::from_cache_dir(&dir);
+
+        let off = library.resolve("minecraft:pair", &BTreeMap::new());
+        assert_eq!(off.parts.len(), 1);
+        assert!(off.property_rotation);
+
+        let on = library.resolve("minecraft:pair", &props("on", "true"));
+        let models: Vec<&str> = on.parts.iter().map(|part| part.model.as_str()).collect();
+        assert_eq!(models, ["stone", "chest"]);
+        assert_eq!(on.parent_stem, None);
+        assert!(on.parts[1].block_entity);
+        assert_eq!(on.parts[1].y, 180);
+        assert!(on.parts[1].uvlock);
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn picker_lists_blocks_not_models_once_definitions_exist() {
+        let dir = temp_dir("model-library-picker");
+        write_model_cache(&dir);
+        let without = ModelLibrary::from_cache_dir(&dir);
+        assert!(without.has_block("stone"));
+        assert_eq!(without.variants("stone"), (vec![BTreeMap::new()], 0));
+
+        write_definitions(&dir);
+        let library = ModelLibrary::from_cache_dir(&dir);
+        assert_eq!(library.block_names(), ["pair", "pebble"]);
+        assert!(library.has_block("pebble"));
+        assert!(!library.has_block("stone"));
+
+        // The unrotated variant is the one a newly picked block starts in.
+        let (variants, start) = library.variants("pebble");
+        assert_eq!(variants, [props("axis", "x"), props("axis", "y")]);
+        assert_eq!(start, 1);
+        let (variants, start) = library.variants("pair");
+        assert_eq!(variants, [props("on", "false"), props("on", "true")]);
+        assert_eq!(start, 0);
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn definitions_reload_when_their_manifest_appears() {
+        let dir = temp_dir("model-library-definitions-reload");
+        write_model_cache(&dir);
+        let mut library = ModelLibrary::from_cache_dir(&dir);
+        assert!(!library.reload_if_changed());
+        write_definitions(&dir);
+        assert!(library.reload_if_changed());
+        assert_eq!(library.block_names(), ["pair", "pebble"]);
+        assert!(!library.reload_if_changed());
         fs::remove_dir_all(dir).ok();
     }
 }

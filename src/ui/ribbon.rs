@@ -8,7 +8,8 @@ pub enum Action {
     ImportNbt(PathBuf),
 }
 
-pub fn show(ui: &mut egui::Ui, import_busy: bool) -> Option<Action> {
+/// `needs_reimport` shows a notice that the cached jar data is out of date.
+pub fn show(ui: &mut egui::Ui, import_busy: bool, needs_reimport: bool) -> Option<Action> {
     let mut action = None;
     egui::MenuBar::new().ui(ui, |ui| {
         ui.menu_button("File", |ui| {
@@ -40,6 +41,11 @@ pub fn show(ui: &mut egui::Ui, import_busy: bool) -> Option<Action> {
             ui.spinner();
             ui.label("Importing jar…");
             ui.ctx().request_repaint();
+        } else if needs_reimport {
+            ui.colored_label(
+                ui.visuals().warn_fg_color,
+                "Block data is out of date. Use File > Set Minecraft Jar to import it again.",
+            );
         }
     });
     action

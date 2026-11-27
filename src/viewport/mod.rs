@@ -52,7 +52,7 @@ impl Viewport {
         world: &mut World,
         history: &mut History,
         placing: bool,
-        selected_block: Option<&str>,
+        selected_state: Option<&BlockState>,
         models: &ModelLibrary,
         textures: &TextureLibrary,
     ) {
@@ -81,10 +81,10 @@ impl Viewport {
         if placing
             && response.clicked()
             && let Some(hit) = hit
-            && let Some(id) = selected_block
+            && let Some(state) = selected_state
         {
             let cell = hit.placement_cell();
-            let state = BlockState::default_of(id);
+            let state = state.clone();
             if self.facing_mode {
                 history.execute(world, PlaceBlockFacing::new(cell, state, hit.face));
             } else {

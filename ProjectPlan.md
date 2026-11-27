@@ -12,6 +12,8 @@ graph TD
     NBT[".nbt structure file"] --> World["World (palette + blocks)"]
     Jar["Minecraft client .jar"] --> Tex["Texture cache"]
     Jar --> Mod["Model cache"]
+    Jar --> Def["Blockstate cache"]
+    Def --> Mesh
     World --> Mesh["Mesh builder + face culling"]
     Mod --> Mesh
     Tex --> Mesh
@@ -27,11 +29,12 @@ graph TD
 | Layer | Contents |
 | --- | --- |
 | NBT structure | `size`, `palette` (`Name` + `Properties`), `blocks` (`pos` + `state` palette index + optional block entity `nbt`) |
+| Asset blockstates | Blockstate JSONs from the jar: for each block, the models each of its states draws |
 | Asset models | Model JSONs from the jar: cuboid elements (0-16 coordinates) and texture slots, with `parent` inheritance |
 | Render mesh | Vertex/index buffers and a 2D texture array, one layer per distinct texture |
 
 A palette entry is looked up by the stem of its `Name` (`minecraft:quartz_pillar` → `quartz_pillar`)
-in the model cache. Properties stay on the entry and drive orientation (5.6).
+in the blockstate cache, which names the models its `Properties` select (4.2).
 
 ---
 
@@ -57,7 +60,7 @@ Imported once from a client `.jar` (the only supported source) and read back on 
 
 ## 4. Model Storage
 
-Imported from the same jar walk as textures. Only model JSONs are cached; blockstate JSONs are not.
+Imported from the same jar walk as textures.
 
 *   **Extraction.** Entries matching `assets/{namespace}/models/block/{file}.json` (no nested paths)
     are written to `./model_cache/`.
@@ -98,14 +101,42 @@ Imported from the same jar walk as textures. Only model JSONs are cached; blocks
 
 `ModelLibrary::resolve(name, properties)` returns a `ResolvedBlock`, memoised per (name, properties):
 
-1. Look up the name's stem. Wall signs map to the standing sign's model and every banner maps to
-   `banner` when they have no model of their own.
-2. Walk the parent chain (depth cap 32), merging texture dictionaries child-first and following
-   `#slot` indirections. An unresolved slot is left empty and draws the missing texture.
-3. Read the elements from `elements_from` and bind each face's texture to a `TextureLibrary` key.
+1. Look up the name's stem in the blockstate cache and select the models for the properties
+   (4.2). Each selected model becomes one part, with the blockstate's `x`, `y` and `uvlock`.
+2. A block with no definition uses the model of the same name. Wall signs then map to the
+   standing sign's model and every banner to `banner` when they have no model of their own.
+3. Per part, walk the parent chain (depth cap 32), merging texture dictionaries child-first and
+   following `#slot` indirections. An unresolved slot is left empty and draws the missing texture.
+4. Read the elements from `elements_from` and bind each face's texture to a `TextureLibrary` key.
    No `elements_from` marks the part as a block entity.
-4. An unknown stem or a chain over the depth cap logs a warning and returns a full cube with the
-   missing texture on every face.
+5. An unknown model or a chain over the depth cap logs a warning and makes that part a full cube
+   with the missing texture on every face.
+
+### 4.2. Blockstates
+
+*   **Extraction.** Entries matching `assets/{namespace}/blockstates/{file}.json`.
+*   **Key.** The file stem, which is the block name without its namespace (`redstone_wire`).
+*   **Record.** `BlockDefinition`, with model ids reduced to stems and weighted model lists reduced
+    to their first entry:
+    *   `Variants`: a list of `{ properties, apply }`. One model per state.
+    *   `Multipart`: a list of `{ when, apply }`. `when` is a property test (each property against
+        a list of allowed values), `Or`, `And`, or absent.
+    *   `apply`: `{ model, x, y, uvlock }`.
+*   **Manifest.** `./_blockstates.cache.json`, key → record. Gitignored. Reloaded when its
+    modification time changes.
+*   **Selection.**
+    *   `Variants`: the first variant whose properties all match. A state that matches none takes
+        the first variant it does not contradict, an unrotated one if there is one.
+    *   `Multipart`: every case whose `when` holds or is absent. No case means nothing is drawn.
+*   **States of a block.** `Variants`: one per variant. `Multipart`: every combination of the
+    values its conditions test. Booleans, wall heights (`none`/`low`/`tall`), wire sides
+    (`none`/`side`/`up`) and bamboo leaves (`none`/`small`/`large`) are completed to their full
+    set. At most `Config::MAX_BLOCK_VARIANTS` (1024).
+*   **Module:** `src/block_models/block_definition.rs`.
+
+Caches imported before blockstates were kept have no definitions: every block then uses the model
+of the same name, and the picker lists model stems. The ribbon then shows a notice to set the jar
+again.
 
 ---
 
@@ -191,7 +222,10 @@ An element is a box `from`–`to` with an optional rotation, up to six faces, an
 
 ### 5.6. Palette Property Transforms
 
-`StateRotation { x, y }` (90° steps) is derived from properties:
+A part's `StateRotation { x, y }` (90° steps) and `uvlock` come from its blockstate (4.2).
+
+When the block's definition reads neither `axis` nor `facing`, or the block has no definition,
+those properties turn every part instead:
 
 | Property | Rotation |
 | --- | --- |
@@ -205,7 +239,8 @@ An element is a box `from`–`to` with an optional rotation, up to six faces, an
 
 It is applied about the block centre `(8, 8, 8)`, X then Y, after element rotation. A rotated part
 culls against the rotated `cullface` direction. `uvlock` counter-rotates `Up`/`Down` UVs by the Y
-rotation. A `Basic` block with a non-identity rotation is drawn as `Elements`.
+rotation. A `Basic` block with a non-identity rotation is drawn as `Elements`, as is a block of
+more than one part.
 
 ### 5.7. Blocks Without Geometry
 
@@ -251,8 +286,7 @@ active.
 *   **E** toggles facing mode. While it is on, the highlight uses `Config::HIGHLIGHT_FACING_COLOR`.
     E is ignored while a text field has keyboard focus.
 *   **Click** places the selected block in the empty cell outside the highlighted face: in its
-    default state, or with facing mode on, with its bottom facing the highlighted face (`facing`
-    set to the hit face).
+    current variant (6.5), or with facing mode on, with `facing` also set to the hit face.
 *   **Right click** removes the highlighted block.
 
 ### 6.2. Undo
@@ -291,6 +325,17 @@ the world with it.
 *   A file that fails to parse, a `pos` without three values, or a `state` outside the palette
     logs an error and leaves the world unchanged.
 *   **Module:** `src/world/structure.rs`.
+
+### 6.5. Block Picker and Variants
+
+*   The right panel lists each block once, by blockstate key, whatever its variants.
+*   Selecting a block lists its states (4.2) and starts on an unrotated variant, or for a
+    multipart block the first combination that draws a model.
+*   **Tab** moves to the next variant and **Shift+Tab** to the previous, wrapping. Both are
+    ignored while a text field has keyboard focus.
+*   The hotbar shows the block, the current variant and its position (`3/40`) on the left, and
+    the previous and next variants on the right.
+*   A click places `BlockState { name, properties }` with the current variant's properties.
 
 ---
 

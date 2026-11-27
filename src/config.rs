@@ -50,6 +50,9 @@ impl Config {
     /// structure, so a single block is not viewed from up close.
     pub const MIN_FRAME_DISTANCE: f32 = 4.0;
 
+    /// Most variants of one block the picker cycles through with Tab.
+    pub const MAX_BLOCK_VARIANTS: usize = 1024;
+
     pub const fn new() -> Self {
         Self {
             major_line_block_spacing: AtomicI32::new(Self::DEFAULT_MAJOR_LINE_BLOCK_SPACING),
@@ -80,6 +83,11 @@ impl Config {
     /// Manifest mapping model keys to cached files.
     pub fn models_manifest_path() -> PathBuf {
         Path::new(".").join(constants::MODELS_MANIFEST_FILE)
+    }
+
+    /// Manifest mapping block names to their blockstate definitions.
+    pub fn blockstates_manifest_path() -> PathBuf {
+        Path::new(".").join(constants::BLOCKSTATES_MANIFEST_FILE)
     }
 
     /// Blocks between brighter major grid lines.

@@ -21,7 +21,7 @@ pub fn show(
     if blocks.is_empty() {
         ui.add_space(8.0);
         ui.label("No cached models.");
-        ui.label("Use File → Set Minecraft Jar to import.");
+        ui.label("Use File > Set Minecraft Jar to import.");
         return;
     }
 

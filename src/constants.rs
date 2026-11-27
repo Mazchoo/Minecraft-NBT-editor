@@ -15,6 +15,24 @@ pub const TEXTURES_MANIFEST_FILE: &str = "_textures.cache.json";
 /// File name of the model cache manifest at the repository root.
 pub const MODELS_MANIFEST_FILE: &str = "_models.cache.json";
 
+/// File name of the blockstate cache manifest at the repository root.
+pub const BLOCKSTATES_MANIFEST_FILE: &str = "_blockstates.cache.json";
+
+/// Blockstate property naming the axis a block lies along.
+pub const AXIS_PROPERTY: &str = "axis";
+
+/// Value sets of blockstate properties whose multipart conditions do not
+/// test every value: booleans, wall heights, redstone wire sides and bamboo
+/// leaves. A
+/// property whose tested values all fall in one set can take any of its
+/// values, in this order.
+pub const PROPERTY_VALUE_SETS: [&[&str]; 4] = [
+    &["false", "true"],
+    &["none", "low", "tall"],
+    &["none", "side", "up"],
+    &["none", "small", "large"],
+];
+
 /// Blockstate property naming the direction a block points.
 pub const FACING_PROPERTY: &str = "facing";
 

@@ -28,3 +28,4 @@ target
 _textures.cache.json
 /model_cache
 _models.cache.json
+_blockstates.cache.json

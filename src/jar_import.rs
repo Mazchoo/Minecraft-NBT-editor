@@ -3,7 +3,8 @@ use std::fs;
 use std::path::Path;
 
 use crate::block_models::{
-    BlockModel, fill_elements_from, ingest_model, match_block_model, remove_stale_cache_files,
+    BlockDefinition, BlockModel, fill_elements_from, ingest_blockstate, ingest_model,
+    match_block_model, match_blockstate, remove_stale_cache_files, write_blockstates_manifest,
     write_manifest as write_models_manifest,
 };
 use crate::textures::jar::{
@@ -16,15 +17,17 @@ use crate::textures::{JarError, Texture};
 pub struct ImportedAssets {
     pub textures: HashMap<String, Texture>,
     pub models: HashMap<String, BlockModel>,
+    pub definitions: HashMap<String, BlockDefinition>,
 }
 
-/// Opens the jar once and offers every entry to the texture matcher and the model matcher.
+/// Opens the jar once and offers every entry to the texture, model and blockstate matchers.
 pub fn import_from_jar(
     jar_path: &Path,
     texture_cache_dir: &Path,
     model_cache_dir: &Path,
     textures_manifest: &Path,
     models_manifest: &Path,
+    blockstates_manifest: &Path,
 ) -> Result<ImportedAssets, JarError> {
     fs::create_dir_all(texture_cache_dir)?;
     fs::create_dir_all(model_cache_dir)?;
@@ -32,6 +35,7 @@ pub fn import_from_jar(
     let mut textures = HashMap::new();
     let mut models = HashMap::new();
     let mut has_elements = HashMap::new();
+    let mut definitions = HashMap::new();
 
     for_each_jar_file(jar_path, |name, bytes| {
         if let Some((file_name, format)) = match_block_texture(name)
@@ -46,6 +50,11 @@ pub fn import_from_jar(
             has_elements.insert(key.clone(), elements);
             models.insert(key, model);
         }
+        if let Some(file_name) = match_blockstate(name)
+            && let Some((key, definition)) = ingest_blockstate(&file_name, &bytes)
+        {
+            definitions.insert(key, definition);
+        }
     })?;
 
     // Textures are complete after the walk. Write that manifest before model
@@ -53,11 +62,17 @@ pub fn import_from_jar(
     write_textures_manifest(textures_manifest, &textures)?;
     remove_stale_textures(texture_cache_dir, &textures);
 
+    write_blockstates_manifest(blockstates_manifest, &definitions)?;
+
     fill_elements_from(&mut models, &has_elements);
     remove_stale_cache_files(model_cache_dir, &models);
     write_models_manifest(models_manifest, &models)?;
 
-    Ok(ImportedAssets { textures, models })
+    Ok(ImportedAssets {
+        textures,
+        models,
+        definitions,
+    })
 }
 
 #[cfg(test)]
@@ -98,6 +113,7 @@ mod tests {
         let model_cache = dir.join("models");
         let textures_manifest = dir.join(crate::constants::TEXTURES_MANIFEST_FILE);
         let models_manifest = dir.join(crate::constants::MODELS_MANIFEST_FILE);
+        let blockstates_manifest = dir.join(crate::constants::BLOCKSTATES_MANIFEST_FILE);
         let png = encode_png([10, 20, 30, 255]);
 
         {
@@ -114,6 +130,10 @@ mod tests {
                 br#"{"parent":"minecraft:block/cube_all","textures":{"all":"minecraft:block/stone"}}"#,
             )
             .unwrap();
+            zip.start_file("assets/minecraft/blockstates/stone.json", options)
+                .unwrap();
+            zip.write_all(br#"{"variants":{"":{"model":"minecraft:block/stone"}}}"#)
+                .unwrap();
             zip.start_file("assets/minecraft/models/block/cube.json", options)
                 .unwrap();
             zip.write_all(
@@ -129,6 +149,7 @@ mod tests {
             &model_cache,
             &textures_manifest,
             &models_manifest,
+            &blockstates_manifest,
         )
         .unwrap();
         assert_eq!(imported.textures.len(), 1);
@@ -140,6 +161,9 @@ mod tests {
         assert!(model_cache.join("stone.json").is_file());
         assert!(textures_manifest.is_file());
         assert!(models_manifest.is_file());
+        assert_eq!(imported.definitions.len(), 1);
+        assert!(imported.definitions.contains_key("stone"));
+        assert!(blockstates_manifest.is_file());
 
         fs::remove_dir_all(dir).ok();
     }
@@ -152,6 +176,7 @@ mod tests {
         let model_cache = dir.join("models");
         let textures_manifest = dir.join(crate::constants::TEXTURES_MANIFEST_FILE);
         let models_manifest = dir.join(crate::constants::MODELS_MANIFEST_FILE);
+        let blockstates_manifest = dir.join(crate::constants::BLOCKSTATES_MANIFEST_FILE);
         let png = encode_png([10, 20, 30, 255]);
 
         fs::create_dir_all(&texture_cache).unwrap();
@@ -192,6 +217,7 @@ mod tests {
             &model_cache,
             &textures_manifest,
             &models_manifest,
+            &blockstates_manifest,
         )
         .unwrap();
         assert!(!imported.textures.contains_key("leftover"));
