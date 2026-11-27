@@ -15,10 +15,6 @@ impl World {
         Self::default()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.cells.is_empty()
-    }
-
     pub fn is_occupied(&self, cell: IVec3) -> bool {
         self.cells.contains_key(&cell)
     }
