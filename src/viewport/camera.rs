@@ -62,32 +62,36 @@ impl Camera {
     /// plane (y = 0) when nothing is hit.
     pub fn get_orbit_point(&self, ndc: Vec2, aspect: f32) -> Vec3 {
         let ray = self.cursor_ray(ndc, aspect);
-        let eye = self.eye();
-        // TODO: intersect displayed mesh when one exists; fall back to y = 0.
-        if ray.y.abs() < 1e-6 {
-            return Vec3::new(self.focus.x, 0.0, self.focus.z);
+        match self.ground_hit_distance(ray) {
+            Some(t) => self.eye() + ray * t,
+            None => Vec3::new(self.focus.x, 0.0, self.focus.z),
         }
-        let t = -eye.y / ray.y;
-        if t < 0.0 {
-            return Vec3::new(self.focus.x, 0.0, self.focus.z);
-        }
-        eye + ray * t
     }
 
-    /// Dolly the camera along the cursor ray so the point under the cursor
-    /// stays (approximately) fixed on screen while zooming.
-    pub fn zoom_toward(&mut self, ndc: Vec2, scroll_delta: f32, aspect: f32) {
-        let factor = 0.998f32.powf(scroll_delta);
-        let new_distance = (self.distance * factor).clamp(0.5, 3000.0);
-        let travel = self.distance - new_distance;
-        if travel == 0.0 {
-            return;
+    /// Distance from the eye along `ray` to the XZ plane (y = 0), if the ray
+    /// reaches it.
+    // TODO: intersect displayed mesh when one exists; fall back to y = 0.
+    fn ground_hit_distance(&self, ray: Vec3) -> Option<f32> {
+        if ray.y.abs() < 1e-6 {
+            return None;
         }
+        let t = -self.eye().y / ray.y;
+        (t >= 0.0).then_some(t)
+    }
 
+    /// Dolly the camera along the cursor ray at a fixed number of blocks per
+    /// scroll unit, wherever the camera is. Zooming in stops just short of
+    /// the point under the cursor.
+    pub fn zoom_toward(&mut self, ndc: Vec2, scroll_delta: f32, aspect: f32) {
         let ray = self.cursor_ray(ndc, aspect);
-        let new_eye = self.eye() + ray * travel;
-        self.distance = new_distance;
-        self.focus = new_eye + self.forward() * new_distance;
+        let mut travel = scroll_delta * Config::ZOOM_SPEED;
+        if travel > 0.0 {
+            if let Some(hit) = self.ground_hit_distance(ray) {
+                travel = travel.min((hit - Config::MIN_ZOOM_DISTANCE).max(0.0));
+            }
+        }
+        // Eye and focus move together, so the orbit distance is unchanged.
+        self.focus += ray * travel;
     }
 
     /// Turntable orbit around `pivot`, driven by a mouse drag delta in screen
@@ -198,8 +202,7 @@ impl Camera {
         let forward_flat = flat.normalize();
         let right = forward_flat.cross(Vec3::Y).normalize();
 
-        // Scale by distance so panning feels consistent at any zoom level.
-        let speed = self.distance * 0.9;
-        self.focus += (forward_flat * input.y + right * input.x) * speed * dt;
+        let direction = (forward_flat * input.y + right * input.x).normalize_or_zero();
+        self.focus += direction * Config::PAN_SPEED * dt;
     }
 }

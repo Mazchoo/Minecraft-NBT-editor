@@ -50,6 +50,16 @@ impl Config {
     /// structure, so a single block is not viewed from up close.
     pub const MIN_FRAME_DISTANCE: f32 = 4.0;
 
+    /// Blocks per second the camera moves while a WASD key is held.
+    pub const PAN_SPEED: f32 = 24.0;
+
+    /// Blocks the camera moves along the cursor ray per point of scroll.
+    pub const ZOOM_SPEED: f32 = 0.05;
+
+    /// Closest, in blocks, zooming in brings the camera to the point under
+    /// the cursor.
+    pub const MIN_ZOOM_DISTANCE: f32 = 0.5;
+
     /// Most variants of one block the picker cycles through with Tab.
     pub const MAX_BLOCK_VARIANTS: usize = 1024;
 
