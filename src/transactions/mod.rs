@@ -6,11 +6,13 @@
 
 mod place_block;
 mod place_block_facing;
+mod remove_block;
 
 use std::collections::VecDeque;
 
 pub use place_block::PlaceBlock;
 pub use place_block_facing::PlaceBlockFacing;
+pub use remove_block::RemoveBlock;
 
 use crate::world::World;
 

@@ -14,7 +14,7 @@ use crate::block_models::ModelLibrary;
 use crate::config::Config;
 use crate::rendering::{self, Highlight, Scene};
 use crate::textures::TextureLibrary;
-use crate::transactions::{History, PlaceBlock, PlaceBlockFacing};
+use crate::transactions::{History, PlaceBlock, PlaceBlockFacing, RemoveBlock};
 use crate::world::{BlockState, World};
 
 use raycast::FaceHit;
@@ -97,7 +97,7 @@ impl Viewport {
         let mut hit = hit;
         if response.secondary_clicked()
             && let Some(target) = hit
-            && world.remove(target.cell)
+            && history.execute(world, RemoveBlock::new(target.cell))
         {
             hit = None;
             ui.ctx().request_repaint();

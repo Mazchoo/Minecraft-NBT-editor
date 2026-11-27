@@ -22,8 +22,7 @@ impl Transaction for PlaceBlock {
         world.place(self.cell, &self.state)
     }
 
-    /// Removes the placed block. Left alone if the cell no longer holds it,
-    /// which can happen when it was deleted by an edit that is not recorded.
+    /// Removes the placed block. Left alone if the cell no longer holds it.
     fn undo(&self, world: &mut World) {
         if world.get(self.cell) == Some(&self.state) {
             world.remove(self.cell);
