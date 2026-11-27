@@ -19,6 +19,11 @@ impl World {
         self.cells.contains_key(&cell)
     }
 
+    /// Palette name of the block in `cell`, if any.
+    pub fn get(&self, cell: IVec3) -> Option<&str> {
+        self.cells.get(&cell).map(String::as_str)
+    }
+
     /// Places `name` in `cell` if that cell is empty.
     ///
     /// `name` is the current right-sidebar selection. Returns whether a block
@@ -65,7 +70,7 @@ mod tests {
     #[test]
     fn place_fills_empty_cell_and_rejects_occupied() {
         let mut world = World::new();
-        assert!(world.is_empty());
+        assert!(world.cells.is_empty());
         assert!(world.place(IVec3::ZERO, "stone"));
         assert!(world.is_occupied(IVec3::ZERO));
         assert!(!world.place(IVec3::ZERO, "dirt"));
@@ -81,7 +86,7 @@ mod tests {
         assert!(!world.remove(IVec3::X));
         assert!(!world.take_dirty());
         assert!(world.remove(IVec3::ZERO));
-        assert!(world.is_empty());
+        assert!(world.cells.is_empty());
         assert!(world.take_dirty());
     }
 

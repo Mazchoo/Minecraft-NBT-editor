@@ -5,10 +5,11 @@ use std::time::Duration;
 use eframe::egui;
 
 use crate::block_models::ModelLibrary;
-use crate::config::Config;
+use crate::config::{CONFIG, Config};
 use crate::jar_import::{ImportedAssets, import_from_jar};
 use crate::rendering;
 use crate::textures::{JarError, TextureLibrary};
+use crate::transactions::History;
 use crate::ui::left_panel::{self, Tool};
 use crate::ui::ribbon;
 use crate::ui::right_panel;
@@ -26,6 +27,7 @@ pub struct App {
     selected_block: Option<String>,
     viewport: Viewport,
     world: World,
+    history: History,
     textures: TextureLibrary,
     models: ModelLibrary,
     jar_import: Option<PendingJarImport>,
@@ -42,6 +44,7 @@ impl App {
             selected_block: None,
             viewport: Viewport::new(),
             world: World::new(),
+            history: History::new(CONFIG.undo_history_limit()),
             textures,
             models: ModelLibrary::load(),
             jar_import: None,
@@ -122,12 +125,27 @@ impl App {
         });
         self.jar_import = Some(PendingJarImport { path, rx });
     }
+
+    /// Ctrl+Z undoes the last transaction. Left to the focused widget while
+    /// one is taking keyboard input, so text fields keep their own undo.
+    fn handle_undo_shortcut(&mut self, ui: &mut egui::Ui) {
+        const UNDO: egui::KeyboardShortcut =
+            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Z);
+        if ui.ctx().egui_wants_keyboard_input() {
+            return;
+        }
+        if ui.input_mut(|input| input.consume_shortcut(&UNDO)) {
+            self.history.undo(&mut self.world);
+        }
+    }
 }
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.poll_jar_import();
         self.poll_model_manifest();
+        self.history.set_limit(CONFIG.undo_history_limit());
+        self.handle_undo_shortcut(ui);
         let import_busy = self.jar_import.is_some();
 
         egui::Panel::top("ribbon").resizable(false).show(ui, |ui| {
@@ -172,6 +190,7 @@ impl eframe::App for App {
                 self.viewport.show(
                     ui,
                     &mut self.world,
+                    &mut self.history,
                     self.active_tool == Tool::Place,
                     self.selected_block.as_deref(),
                     &self.models,

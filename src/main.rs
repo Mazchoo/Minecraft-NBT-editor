@@ -8,6 +8,7 @@ mod jar_import;
 mod models;
 mod rendering;
 mod textures;
+mod transactions;
 mod ui;
 mod viewport;
 mod world;

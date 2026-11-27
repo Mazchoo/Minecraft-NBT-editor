@@ -13,6 +13,7 @@ use key_events::{cursor_ndc, handle_input};
 use crate::block_models::ModelLibrary;
 use crate::rendering::{self, Scene};
 use crate::textures::TextureLibrary;
+use crate::transactions::{History, PlaceBlock};
 use crate::world::World;
 
 use raycast::FaceHit;
@@ -35,6 +36,7 @@ impl Viewport {
         &mut self,
         ui: &mut egui::Ui,
         world: &mut World,
+        history: &mut History,
         placing: bool,
         selected_block: Option<&str>,
         models: &ModelLibrary,
@@ -63,10 +65,7 @@ impl Viewport {
             && let Some(hit) = hit
             && let Some(name) = selected_block
         {
-            let cell = hit.placement_cell();
-            if !world.is_occupied(cell) {
-                world.place(cell, name);
-            }
+            history.execute(world, PlaceBlock::new(hit.placement_cell(), name));
         }
 
         // Right click deletes the highlighted block. A ground hit targets the

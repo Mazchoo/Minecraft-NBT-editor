@@ -1,15 +1,17 @@
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 
 use crate::constants;
 
 /// Mutable app settings. Access via [`CONFIG`].
 pub struct Config {
     major_line_block_spacing: AtomicI32,
+    undo_history_limit: AtomicUsize,
 }
 
 impl Config {
     const DEFAULT_MAJOR_LINE_BLOCK_SPACING: i32 = 8;
+    const DEFAULT_UNDO_HISTORY_LIMIT: usize = 100;
 
     /// Width and height, in pixels, of one block texture on the GPU. Larger
     /// source images and animation strips are resampled to this size.
@@ -42,6 +44,7 @@ impl Config {
     pub const fn new() -> Self {
         Self {
             major_line_block_spacing: AtomicI32::new(Self::DEFAULT_MAJOR_LINE_BLOCK_SPACING),
+            undo_history_limit: AtomicUsize::new(Self::DEFAULT_UNDO_HISTORY_LIMIT),
         }
     }
 
@@ -80,6 +83,17 @@ impl Config {
     pub fn set_major_line_block_spacing(&self, value: i32) {
         self.major_line_block_spacing
             .store(value.max(1), Ordering::Relaxed);
+    }
+
+    /// Number of most recent transactions kept for undo.
+    pub fn undo_history_limit(&self) -> usize {
+        self.undo_history_limit.load(Ordering::Relaxed)
+    }
+
+    /// Sets how many transactions are kept for undo. Zero disables undo.
+    #[allow(dead_code)] // wired up when settings UI lands
+    pub fn set_undo_history_limit(&self, value: usize) {
+        self.undo_history_limit.store(value, Ordering::Relaxed);
     }
 }
 
