@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
-/// Namespace assumed for a block id written without one, as Minecraft does.
-const DEFAULT_NAMESPACE: &str = "minecraft";
+use crate::constants::DEFAULT_NAMESPACE;
 
 /// One entry of a structure's `palette`: the block's `Name` and `Properties`,
 /// exactly as they are written to the NBT file.

@@ -1,4 +1,5 @@
 mod block_state;
+pub mod structure;
 
 use std::collections::HashMap;
 
@@ -23,6 +24,33 @@ pub struct World {
 impl World {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Builds a world from a structure file's `palette` and `blocks`. Every
+    /// `state` must be an index into `palette`. The palette is kept as it is,
+    /// so the indices match the file.
+    pub fn from_structure(
+        palette: Vec<BlockState>,
+        blocks: impl IntoIterator<Item = (IVec3, u32)>,
+    ) -> Self {
+        let blocks: HashMap<IVec3, u32> = blocks.into_iter().collect();
+        debug_assert!(blocks.values().all(|&s| (s as usize) < palette.len()));
+        Self {
+            palette,
+            blocks,
+            dirty: true,
+        }
+    }
+
+    /// Smallest and largest occupied cell on each axis, or `None` when the
+    /// world is empty.
+    pub fn bounds(&self) -> Option<(IVec3, IVec3)> {
+        self.blocks
+            .keys()
+            .fold(None, |bounds: Option<(IVec3, IVec3)>, &cell| match bounds {
+                Some((min, max)) => Some((min.min(cell), max.max(cell))),
+                None => Some((cell, cell)),
+            })
     }
 
     pub fn is_occupied(&self, cell: IVec3) -> bool {

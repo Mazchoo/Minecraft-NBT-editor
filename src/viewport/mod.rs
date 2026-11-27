@@ -37,6 +37,15 @@ impl Viewport {
         }
     }
 
+    /// Points the camera at everything in `world`. Does nothing when it is
+    /// empty.
+    pub fn frame_world(&mut self, world: &World) {
+        if let Some((min, max)) = world.bounds() {
+            // A cell spans one unit from its position.
+            self.camera.frame(min.as_vec3(), (max + 1).as_vec3());
+        }
+    }
+
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,

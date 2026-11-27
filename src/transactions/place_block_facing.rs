@@ -1,11 +1,9 @@
 use glam::IVec3;
 
 use super::{PlaceBlock, Transaction};
+use crate::constants::FACING_PROPERTY;
 use crate::models::Face;
 use crate::world::{BlockState, World};
-
-/// Blockstate property naming the direction a block points.
-const FACING: &str = "facing";
 
 /// Places one block in an empty cell with its bottom facing the block it was
 /// placed against: `facing` is set to the face that was clicked, so the block
@@ -20,7 +18,7 @@ impl PlaceBlockFacing {
     pub fn new(cell: IVec3, mut state: BlockState, facing: Face) -> Self {
         state
             .properties
-            .insert(FACING.to_owned(), facing.name().to_owned());
+            .insert(FACING_PROPERTY.to_owned(), facing.name().to_owned());
         Self {
             placement: PlaceBlock::new(cell, state),
         }
@@ -55,7 +53,7 @@ mod tests {
         let placed = world.get(IVec3::X).unwrap();
         assert_eq!(placed.name, "minecraft:end_rod");
         assert_eq!(
-            placed.properties.get(FACING).map(String::as_str),
+            placed.properties.get(FACING_PROPERTY).map(String::as_str),
             Some("east")
         );
     }
@@ -65,11 +63,15 @@ mod tests {
         let mut selected = state("end_rod");
         selected
             .properties
-            .insert(FACING.to_owned(), "north".to_owned());
+            .insert(FACING_PROPERTY.to_owned(), "north".to_owned());
         let mut world = World::new();
         PlaceBlockFacing::new(IVec3::ZERO, selected, Face::Down).apply(&mut world);
         assert_eq!(
-            world.get(IVec3::ZERO).unwrap().properties.get(FACING),
+            world
+                .get(IVec3::ZERO)
+                .unwrap()
+                .properties
+                .get(FACING_PROPERTY),
             Some(&"down".to_owned())
         );
     }

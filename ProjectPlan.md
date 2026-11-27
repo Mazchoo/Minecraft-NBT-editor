@@ -277,6 +277,21 @@ The world mirrors the structure file:
     export.
 *   **Blocks.** Cell → palette index (`state`).
 
+### 6.4. Import
+
+**File → Import NBT** reads a structure `.nbt` file (gzipped or raw) with `fastnbt` and replaces
+the world with it.
+
+*   `palette` is taken as written, so `state` indices match the file. A file with `palettes`
+    instead uses its first variant.
+*   Each `blocks` entry sets its `pos` cell to its `state`. Cells of `minecraft:air`, `cave_air`
+    and `void_air` are left empty.
+*   `size`, `entities`, `DataVersion` and block entity `nbt` are not read.
+*   The undo history is cleared and the camera frames the imported blocks.
+*   A file that fails to parse, a `pos` without three values, or a `state` outside the palette
+    logs an error and leaves the world unchanged.
+*   **Module:** `src/world/structure.rs`.
+
 ---
 
 ## 7. Implementation Phases

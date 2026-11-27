@@ -146,7 +146,10 @@ pub(super) fn rotation_yaw(properties: &BTreeMap<String, String>) -> f32 {
 /// Yaw, in [`ElementRotation`]'s convention, for the `facing` property of
 /// wall-mounted signs and banners.
 pub(super) fn facing_yaw(properties: &BTreeMap<String, String>) -> f32 {
-    match properties.get("facing").map(String::as_str) {
+    match properties
+        .get(crate::constants::FACING_PROPERTY)
+        .map(String::as_str)
+    {
         Some("west") => -90.0,
         Some("east") => 90.0,
         Some("south") => 0.0,

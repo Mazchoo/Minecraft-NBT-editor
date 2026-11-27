@@ -230,7 +230,7 @@ impl StateRotation {
         }
         // `facing` turns the block so its top points that way and its bottom
         // rests against the neighbour on the opposite side.
-        if let Some(facing) = properties.get("facing") {
+        if let Some(facing) = properties.get(crate::constants::FACING_PROPERTY) {
             return match facing.as_str() {
                 "down" => Self { x: 180, y: 0 },
                 "south" => Self { x: 90, y: 0 },

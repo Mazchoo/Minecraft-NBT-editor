@@ -46,6 +46,10 @@ impl Config {
     /// the two fight over the depth buffer and the overlay flickers.
     pub const HIGHLIGHT_OUTSET: f32 = 0.008;
 
+    /// Closest, in blocks, the camera gets when framing an imported
+    /// structure, so a single block is not viewed from up close.
+    pub const MIN_FRAME_DISTANCE: f32 = 4.0;
+
     pub const fn new() -> Self {
         Self {
             major_line_block_spacing: AtomicI32::new(Self::DEFAULT_MAJOR_LINE_BLOCK_SPACING),

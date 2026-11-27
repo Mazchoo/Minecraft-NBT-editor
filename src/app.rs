@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -14,7 +14,7 @@ use crate::ui::left_panel::{self, Tool};
 use crate::ui::ribbon;
 use crate::ui::right_panel;
 use crate::viewport::Viewport;
-use crate::world::World;
+use crate::world::{World, structure};
 
 struct PendingJarImport {
     path: PathBuf,
@@ -126,6 +126,25 @@ impl App {
         self.jar_import = Some(PendingJarImport { path, rx });
     }
 
+    /// Replaces the world with the structure file at `path` and points the
+    /// camera at it. The undo history belongs to the old world and is dropped.
+    /// On failure the current world is kept.
+    fn import_nbt(&mut self, path: &Path) {
+        match structure::load(path) {
+            Ok(world) => {
+                log::info!(
+                    "imported {} blocks from {}",
+                    world.blocks().count(),
+                    path.display()
+                );
+                self.world = world;
+                self.history.clear();
+                self.viewport.frame_world(&self.world);
+            }
+            Err(err) => log::error!("failed to import {}: {err}", path.display()),
+        }
+    }
+
     /// Ctrl+Z undoes the last transaction. Left to the focused widget while
     /// one is taking keyboard input, so text fields keep their own undo.
     fn handle_undo_shortcut(&mut self, ui: &mut egui::Ui) {
@@ -149,10 +168,12 @@ impl eframe::App for App {
         let import_busy = self.jar_import.is_some();
 
         egui::Panel::top("ribbon").resizable(false).show(ui, |ui| {
-            if let Some(path) = ribbon::show(ui, import_busy) {
-                self.start_jar_import(path);
-                ui.ctx().request_repaint();
+            match ribbon::show(ui, import_busy) {
+                Some(ribbon::Action::SetJar(path)) => self.start_jar_import(path),
+                Some(ribbon::Action::ImportNbt(path)) => self.import_nbt(&path),
+                None => return,
             }
+            ui.ctx().request_repaint();
         });
 
         egui::Panel::left("tools_panel")

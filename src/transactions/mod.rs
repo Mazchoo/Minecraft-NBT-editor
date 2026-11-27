@@ -76,6 +76,12 @@ impl History {
         }
     }
 
+    /// Forgets every recorded transaction, for when the world they applied
+    /// to has been replaced.
+    pub fn clear(&mut self) {
+        self.applied.clear();
+    }
+
     fn trim(&mut self) {
         while self.applied.len() > self.limit {
             self.applied.pop_front();

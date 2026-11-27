@@ -1,3 +1,4 @@
+use crate::config::Config;
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 
 /// Blender-style orbit camera: a focus point plus yaw/pitch/distance.
@@ -24,6 +25,14 @@ impl Default for Camera {
 }
 
 impl Camera {
+    /// Centres the view on the box `min`..`max` and backs off far enough to
+    /// see all of it, keeping the current viewing angle.
+    pub fn frame(&mut self, min: Vec3, max: Vec3) {
+        let radius = (max - min).length() * 0.5;
+        self.focus = (min + max) * 0.5;
+        self.distance = (radius / (self.fov_y * 0.5).sin()).max(Config::MIN_FRAME_DISTANCE);
+    }
+
     /// Direction the camera looks in (from eye toward focus), normalized.
     pub fn forward(&self) -> Vec3 {
         let (sin_yaw, cos_yaw) = self.yaw.sin_cos();
