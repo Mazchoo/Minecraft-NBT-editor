@@ -5,10 +5,12 @@
 //! ones so they can be undone in reverse order.
 
 mod place_block;
+mod place_block_facing;
 
 use std::collections::VecDeque;
 
 pub use place_block::PlaceBlock;
+pub use place_block_facing::PlaceBlockFacing;
 
 use crate::world::World;
 
@@ -86,12 +88,14 @@ pub(crate) mod testing {
     use std::collections::BTreeMap;
 
     use super::*;
+    use crate::world::BlockState;
 
-    /// Order-independent copy of every block in `world`.
-    pub fn snapshot(world: &World) -> BTreeMap<[i32; 3], String> {
+    /// Order-independent copy of every block in `world`, by block state
+    /// rather than palette index.
+    pub fn snapshot(world: &World) -> BTreeMap<[i32; 3], BlockState> {
         world
-            .iter()
-            .map(|(cell, name)| (cell.to_array(), name.to_owned()))
+            .blocks()
+            .map(|(cell, state)| (cell.to_array(), world.palette()[state as usize].clone()))
             .collect()
     }
 
@@ -113,9 +117,10 @@ mod tests {
 
     use super::testing::snapshot;
     use super::*;
+    use crate::world::BlockState;
 
     fn place(x: i32) -> PlaceBlock {
-        PlaceBlock::new(IVec3::new(x, 0, 0), "stone")
+        PlaceBlock::new(IVec3::new(x, 0, 0), BlockState::default_of("stone"))
     }
 
     #[test]
@@ -157,8 +162,11 @@ mod tests {
         assert!(history.undo(&mut world));
         assert!(!history.undo(&mut world));
         // The first placement fell out of the history and stays.
-        assert_eq!(world.get(IVec3::ZERO), Some("stone"));
-        assert_eq!(world.iter().count(), 1);
+        assert_eq!(
+            world.get(IVec3::ZERO),
+            Some(&BlockState::default_of("stone"))
+        );
+        assert_eq!(world.blocks().count(), 1);
     }
 
     #[test]
@@ -172,7 +180,7 @@ mod tests {
 
         assert!(history.undo(&mut world));
         assert!(!history.undo(&mut world));
-        assert_eq!(world.iter().count(), 2);
+        assert_eq!(world.blocks().count(), 2);
     }
 
     #[test]

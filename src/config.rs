@@ -36,6 +36,11 @@ impl Config {
     /// RGBA colour of the overlay on the block face a placement would target.
     pub const HIGHLIGHT_COLOR: [f32; 4] = [1.0, 0.92, 0.2, 0.42];
 
+    /// RGBA colour of the placement overlay while facing mode (toggled by E)
+    /// is on, when a click places the block with its bottom facing the
+    /// highlighted face.
+    pub const HIGHLIGHT_FACING_COLOR: [f32; 4] = [0.25, 0.8, 1.0, 0.45];
+
     /// Distance, in blocks, the placement overlay floats above the face it
     /// marks. The overlay is coplanar with that face, so without a small gap
     /// the two fight over the depth buffer and the overlay flickers.

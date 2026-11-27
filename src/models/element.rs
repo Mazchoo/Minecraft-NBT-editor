@@ -228,13 +228,15 @@ impl StateRotation {
                 _ => Self::IDENTITY,
             };
         }
+        // `facing` turns the block so its top points that way and its bottom
+        // rests against the neighbour on the opposite side.
         if let Some(facing) = properties.get("facing") {
             return match facing.as_str() {
-                "south" => Self { x: 0, y: 180 },
-                "west" => Self { x: 0, y: 270 },
-                "east" => Self { x: 0, y: 90 },
-                "down" => Self { x: 90, y: 0 },
-                "up" => Self { x: 270, y: 0 },
+                "down" => Self { x: 180, y: 0 },
+                "south" => Self { x: 90, y: 0 },
+                "west" => Self { x: 90, y: 90 },
+                "north" => Self { x: 90, y: 180 },
+                "east" => Self { x: 90, y: 270 },
                 _ => Self::IDENTITY,
             };
         }
@@ -348,12 +350,16 @@ mod tests {
     }
 
     #[test]
-    fn facing_south_is_y180() {
-        let mut props = BTreeMap::new();
-        props.insert("facing".into(), "south".into());
-        assert_eq!(
-            StateRotation::from_properties(&props),
-            StateRotation::new(0, 180)
-        );
+    fn facing_points_the_top_that_way_and_the_bottom_the_other() {
+        for face in Face::ALL {
+            let mut props = BTreeMap::new();
+            props.insert("facing".into(), face.name().into());
+            let rotation = StateRotation::from_properties(&props);
+            assert_eq!(Face::Up.after_geometry_rotation(rotation), face);
+            assert_eq!(
+                Face::Down.after_geometry_rotation(rotation),
+                face.opposite()
+            );
+        }
     }
 }

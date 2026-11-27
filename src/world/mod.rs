@@ -1,12 +1,22 @@
+mod block_state;
+
 use std::collections::HashMap;
 
 use glam::IVec3;
 
-/// Sparse voxel grid of placed blocks. Values are palette names from the
-/// right-sidebar picker (model stems), stored in default orientation.
+pub use block_state::BlockState;
+
+/// Sparse voxel grid of placed blocks, laid out like a structure NBT file: a
+/// `palette` of block states, and `blocks` that each refer to one palette
+/// entry by index (`state`).
+///
+/// Palette entries are never removed or reordered, so an index stays valid
+/// for as long as the world exists. Entries no block refers to any more are
+/// dropped when the structure is written out.
 #[derive(Debug, Default)]
 pub struct World {
-    cells: HashMap<IVec3, String>,
+    palette: Vec<BlockState>,
+    blocks: HashMap<IVec3, u32>,
     dirty: bool,
 }
 
@@ -16,39 +26,43 @@ impl World {
     }
 
     pub fn is_occupied(&self, cell: IVec3) -> bool {
-        self.cells.contains_key(&cell)
+        self.blocks.contains_key(&cell)
     }
 
-    /// Palette name of the block in `cell`, if any.
-    pub fn get(&self, cell: IVec3) -> Option<&str> {
-        self.cells.get(&cell).map(String::as_str)
+    /// Block state in `cell`, if any.
+    pub fn get(&self, cell: IVec3) -> Option<&BlockState> {
+        self.blocks
+            .get(&cell)
+            .map(|&state| &self.palette[state as usize])
     }
 
-    /// Places `name` in `cell` if that cell is empty.
-    ///
-    /// `name` is the current right-sidebar selection. Returns whether a block
-    /// was inserted.
-    pub fn place(&mut self, cell: IVec3, name: impl Into<String>) -> bool {
-        use std::collections::hash_map::Entry;
-        match self.cells.entry(cell) {
-            Entry::Occupied(_) => false,
-            Entry::Vacant(slot) => {
-                slot.insert(name.into());
-                self.dirty = true;
-                true
-            }
+    /// Places `state` in `cell` if that cell is empty, adding it to the
+    /// palette when it is not there yet. Returns whether a block was inserted.
+    pub fn place(&mut self, cell: IVec3, state: &BlockState) -> bool {
+        if self.blocks.contains_key(&cell) {
+            return false;
         }
+        let index = self.palette_index(state);
+        self.blocks.insert(cell, index);
+        self.dirty = true;
+        true
     }
 
     /// Removes the block in `cell`. Returns whether a block was there.
     pub fn remove(&mut self, cell: IVec3) -> bool {
-        let removed = self.cells.remove(&cell).is_some();
+        let removed = self.blocks.remove(&cell).is_some();
         self.dirty |= removed;
         removed
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (IVec3, &str)> {
-        self.cells.iter().map(|(cell, name)| (*cell, name.as_str()))
+    /// Every palette entry, indexed by the `state` values from [`Self::blocks`].
+    pub fn palette(&self) -> &[BlockState] {
+        &self.palette
+    }
+
+    /// Every occupied cell with the palette index of its block state.
+    pub fn blocks(&self) -> impl Iterator<Item = (IVec3, u32)> + '_ {
+        self.blocks.iter().map(|(cell, state)| (*cell, *state))
     }
 
     /// Marks the GPU mesh out of date (for example after a model-cache reload).
@@ -61,40 +75,80 @@ impl World {
         self.dirty = false;
         dirty
     }
+
+    fn palette_index(&mut self, state: &BlockState) -> u32 {
+        match self.palette.iter().position(|entry| entry == state) {
+            Some(index) => index as u32,
+            None => {
+                self.palette.push(state.clone());
+                (self.palette.len() - 1) as u32
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn state(id: &str) -> BlockState {
+        BlockState::default_of(id)
+    }
+
     #[test]
     fn place_fills_empty_cell_and_rejects_occupied() {
         let mut world = World::new();
-        assert!(world.cells.is_empty());
-        assert!(world.place(IVec3::ZERO, "stone"));
+        assert!(world.blocks.is_empty());
+        assert!(world.place(IVec3::ZERO, &state("stone")));
         assert!(world.is_occupied(IVec3::ZERO));
-        assert!(!world.place(IVec3::ZERO, "dirt"));
-        assert_eq!(world.iter().count(), 1);
-        assert_eq!(world.iter().next().unwrap(), (IVec3::ZERO, "stone"));
+        assert!(!world.place(IVec3::ZERO, &state("dirt")));
+        assert_eq!(world.blocks().count(), 1);
+        assert_eq!(world.get(IVec3::ZERO), Some(&state("stone")));
+    }
+
+    #[test]
+    fn identical_states_share_one_palette_entry() {
+        let mut world = World::new();
+        let mut log_x = state("oak_log");
+        log_x.properties.insert("axis".into(), "x".into());
+        world.place(IVec3::ZERO, &state("oak_log"));
+        world.place(IVec3::X, &log_x);
+        world.place(IVec3::Y, &state("oak_log"));
+        assert_eq!(world.palette(), &[state("oak_log"), log_x.clone()]);
+        let mut indices: Vec<_> = world.blocks().map(|(_, i)| i).collect();
+        indices.sort();
+        assert_eq!(indices, [0, 0, 1]);
+        assert_eq!(world.get(IVec3::X), Some(&log_x));
     }
 
     #[test]
     fn remove_clears_occupied_cell_and_ignores_empty() {
         let mut world = World::new();
-        world.place(IVec3::ZERO, "stone");
+        world.place(IVec3::ZERO, &state("stone"));
         world.take_dirty();
         assert!(!world.remove(IVec3::X));
         assert!(!world.take_dirty());
         assert!(world.remove(IVec3::ZERO));
-        assert!(world.cells.is_empty());
+        assert!(world.blocks.is_empty());
         assert!(world.take_dirty());
+    }
+
+    #[test]
+    fn palette_indices_stay_valid_after_removal() {
+        let mut world = World::new();
+        world.place(IVec3::ZERO, &state("stone"));
+        world.place(IVec3::X, &state("dirt"));
+        world.remove(IVec3::ZERO);
+        world.place(IVec3::Y, &state("granite"));
+        assert_eq!(world.get(IVec3::X), Some(&state("dirt")));
+        assert_eq!(world.get(IVec3::Y), Some(&state("granite")));
     }
 
     #[test]
     fn take_dirty_clears_after_place() {
         let mut world = World::new();
         assert!(!world.take_dirty());
-        world.place(IVec3::new(1, 0, 0), "oak_planks");
+        world.place(IVec3::new(1, 0, 0), &state("oak_planks"));
         assert!(world.take_dirty());
         assert!(!world.take_dirty());
         world.mark_dirty();

@@ -11,10 +11,11 @@ use camera::Camera;
 use key_events::{cursor_ndc, handle_input};
 
 use crate::block_models::ModelLibrary;
-use crate::rendering::{self, Scene};
+use crate::config::Config;
+use crate::rendering::{self, Highlight, Scene};
 use crate::textures::TextureLibrary;
-use crate::transactions::{History, PlaceBlock};
-use crate::world::World;
+use crate::transactions::{History, PlaceBlock, PlaceBlockFacing};
+use crate::world::{BlockState, World};
 
 use raycast::FaceHit;
 
@@ -22,6 +23,9 @@ pub struct Viewport {
     camera: Camera,
     /// World pivot captured when a middle-mouse orbit drag starts.
     orbit_pivot: Option<Vec3>,
+    /// Toggled by E. While on, a click places the block with its bottom
+    /// facing the highlighted face.
+    facing_mode: bool,
 }
 
 impl Viewport {
@@ -29,6 +33,7 @@ impl Viewport {
         Self {
             camera: Camera::default(),
             orbit_pivot: None,
+            facing_mode: false,
         }
     }
 
@@ -60,12 +65,22 @@ impl Viewport {
 
         let hit = placement_hit(placing, &self.camera, &response, rect, aspect, world);
 
+        if e_pressed(ui) {
+            self.facing_mode = !self.facing_mode;
+        }
+
         if placing
             && response.clicked()
             && let Some(hit) = hit
-            && let Some(name) = selected_block
+            && let Some(id) = selected_block
         {
-            history.execute(world, PlaceBlock::new(hit.placement_cell(), name));
+            let cell = hit.placement_cell();
+            let state = BlockState::default_of(id);
+            if self.facing_mode {
+                history.execute(world, PlaceBlockFacing::new(cell, state, hit.face));
+            } else {
+                history.execute(world, PlaceBlock::new(cell, state));
+            }
         }
 
         // Right click deletes the highlighted block. A ground hit targets the
@@ -89,10 +104,40 @@ impl Viewport {
             Scene {
                 view_proj: self.camera.view_proj(aspect),
                 mesh,
-                highlight: hit.map(|hit| (hit.cell, hit.face)),
+                highlight: hit.map(|hit| Highlight {
+                    cell: hit.cell,
+                    face: hit.face,
+                    color: if self.facing_mode {
+                        Config::HIGHLIGHT_FACING_COLOR
+                    } else {
+                        Config::HIGHLIGHT_COLOR
+                    },
+                }),
             },
         );
     }
+}
+
+/// Whether E went down this frame. Key repeat is ignored, and so is E while a
+/// text field has keyboard focus, so typing an "e" in the search box does not
+/// toggle facing mode.
+fn e_pressed(ui: &egui::Ui) -> bool {
+    if ui.ctx().egui_wants_keyboard_input() {
+        return false;
+    }
+    ui.input(|input| {
+        input.events.iter().any(|event| {
+            matches!(
+                event,
+                egui::Event::Key {
+                    key: egui::Key::E,
+                    pressed: true,
+                    repeat: false,
+                    ..
+                }
+            )
+        })
+    })
 }
 
 fn placement_hit(

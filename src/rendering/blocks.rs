@@ -271,23 +271,28 @@ impl egui_wgpu::CallbackTrait for BlockCallback {
 /// pressed against an occluding neighbour and faces lining sealed cavities are
 /// dropped (see [`Visibility`]).
 pub fn build_gpu_mesh(world: &World, models: &ModelLibrary, textures: &TextureLibrary) -> GpuMesh {
-    let empty = BTreeMap::new();
     let has_alpha = |key: &str| {
         textures
             .get_record(key)
             .is_some_and(|texture| texture.has_alpha())
     };
-    // Each distinct block with the sides of its cell it hides completely.
-    let mut blocks: BTreeMap<String, (Block, u8)> = BTreeMap::new();
+    // Per palette entry in use, the drawable block and the sides of its cell
+    // it hides completely. Each entry resolves once however many cells use it.
+    let mut blocks: Vec<Option<(Block, u8)>> = vec![None; world.palette().len()];
     let mut keys: BTreeMap<String, u32> = BTreeMap::new();
     keys.insert(String::new(), 0);
     let mut next_layer = 1u32;
 
-    for (_, name) in world.iter() {
-        if blocks.contains_key(name) {
+    for (_, index) in world.blocks() {
+        let slot = &mut blocks[index as usize];
+        if slot.is_some() {
             continue;
         }
-        let block = Block::from_resolved(name, &models.resolve(name, &empty));
+        let state = &world.palette()[index as usize];
+        let block = Block::from_resolved(
+            state.name.as_str(),
+            &models.resolve(&state.name, &state.properties),
+        );
         for key in block.texture_keys() {
             keys.entry(key).or_insert_with(|| {
                 let layer = next_layer;
@@ -296,18 +301,19 @@ pub fn build_gpu_mesh(world: &World, models: &ModelLibrary, textures: &TextureLi
             });
         }
         let occlusion = block.occlusion_mask(has_alpha);
-        blocks.insert(name.to_owned(), (block, occlusion));
+        *slot = Some((block, occlusion));
     }
+    let block_of = |index: u32| blocks[index as usize].as_ref();
 
     let visibility = Visibility::compute(
         world
-            .iter()
-            .filter_map(|(cell, name)| blocks.get(name).map(|(_, occlusion)| (cell, *occlusion))),
+            .blocks()
+            .filter_map(|(cell, index)| block_of(index).map(|(_, occlusion)| (cell, *occlusion))),
     );
 
     let mut mesh = BlockMesh::default();
-    for (cell, name) in world.iter() {
-        let Some((block, _)) = blocks.get(name) else {
+    for (cell, index) in world.blocks() {
+        let Some((block, _)) = block_of(index) else {
             continue;
         };
         mesh.place_culled(

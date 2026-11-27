@@ -125,8 +125,16 @@ impl HighlightRenderer {
 
 pub struct HighlightCallback {
     pub view_proj: Mat4,
-    /// Cell and face to overlay, if any.
-    pub target: Option<(glam::IVec3, Face)>,
+    /// Face to overlay, if any.
+    pub target: Option<Highlight>,
+}
+
+/// A block face to overlay, and the overlay's RGBA colour.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Highlight {
+    pub cell: glam::IVec3,
+    pub face: Face,
+    pub color: [f32; 4],
 }
 
 impl egui_wgpu::CallbackTrait for HighlightCallback {
@@ -147,8 +155,8 @@ impl egui_wgpu::CallbackTrait for HighlightCallback {
             bytemuck::cast_slice(&self.view_proj.to_cols_array()),
         );
         match self.target {
-            Some((cell, face)) => {
-                let vertices = face_triangles(face, cell);
+            Some(Highlight { cell, face, color }) => {
+                let vertices = face_triangles(face, cell, color);
                 queue.write_buffer(&renderer.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
                 renderer.vertex_count = vertices.len() as u32;
             }

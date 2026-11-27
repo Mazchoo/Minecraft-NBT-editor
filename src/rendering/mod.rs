@@ -14,12 +14,12 @@ use std::sync::Arc;
 
 use eframe::egui;
 use eframe::egui_wgpu::Callback;
-use glam::{IVec3, Mat4};
+use glam::Mat4;
 
-use crate::models::Face;
 use crate::textures::TextureLibrary;
 
 pub use blocks::{GpuMesh, build_gpu_mesh};
+pub use highlight::Highlight;
 
 /// What the viewport shows this frame.
 pub struct Scene {
@@ -28,7 +28,7 @@ pub struct Scene {
     /// last one.
     pub mesh: Option<Arc<GpuMesh>>,
     /// Block face to overlay as the placement target.
-    pub highlight: Option<(IVec3, Face)>,
+    pub highlight: Option<Highlight>,
 }
 
 /// Creates the GPU resources once at startup.
