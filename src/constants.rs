@@ -94,6 +94,45 @@ pub const CONDUIT_ATLAS_SIZE: u32 = 32;
 /// Prefix of the texture keys of tiles cut from the conduit atlas.
 pub const CONDUIT_TILE_PREFIX: &str = "conduit";
 
+/// Star layers of the end portal and end gateway surface, under `textures/`.
+pub const END_PORTAL_STARS_TEXTURE: &str = "entity/end_portal";
+
+/// Backdrop of the end portal and end gateway surface, under `textures/`.
+pub const END_PORTAL_SKY_TEXTURE: &str = "environment/end_sky";
+
+/// Texture key of the surface baked from [`END_PORTAL_STARS_TEXTURE`] and
+/// [`END_PORTAL_SKY_TEXTURE`].
+pub const END_PORTAL_SURFACE_TEXTURE: &str = "end_portal_surface";
+
+/// Colour of the backdrop, then of each star layer, as vanilla's end portal
+/// shader weights them.
+pub const END_PORTAL_LAYER_COLOURS: [[f32; 3]; 16] = [
+    [0.022087, 0.098399, 0.110818],
+    [0.011892, 0.095924, 0.089485],
+    [0.027636, 0.101689, 0.100326],
+    [0.046564, 0.109883, 0.114838],
+    [0.064901, 0.117696, 0.097189],
+    [0.063761, 0.086895, 0.123646],
+    [0.084817, 0.111994, 0.166380],
+    [0.097489, 0.154120, 0.091064],
+    [0.106152, 0.131144, 0.195191],
+    [0.097721, 0.110188, 0.187229],
+    [0.133516, 0.138278, 0.148582],
+    [0.070006, 0.243332, 0.235792],
+    [0.196766, 0.142899, 0.214696],
+    [0.047281, 0.315338, 0.321970],
+    [0.204675, 0.390010, 0.302066],
+    [0.080955, 0.314821, 0.661491],
+];
+
+/// Side, in star-texture texels, of the square each surface texel takes the
+/// brightest of, so single-texel stars survive the bake.
+pub const END_PORTAL_STAR_POOL: u32 = 2;
+
+/// Bottom and top of the end portal's surface, in model units.
+pub const END_PORTAL_BOTTOM: f32 = 6.0;
+pub const END_PORTAL_TOP: f32 = 12.0;
+
 /// Mob head atlases, under `textures/`.
 pub const SKELETON_SKULL_TEXTURE: &str = "entity/skeleton/skeleton";
 pub const WITHER_SKELETON_SKULL_TEXTURE: &str = "entity/skeleton/wither_skeleton";
@@ -151,6 +190,9 @@ pub const GRASS_TINT: [u8; 4] = [145, 189, 89, 255];
 
 /// Tint of leaves, vines and ferns.
 pub const FOLIAGE_TINT: [u8; 4] = [72, 181, 24, 255];
+
+/// Tint of lily pads.
+pub const LILY_PAD_TINT: [u8; 4] = [32, 128, 48, 255];
 
 /// Tint of water.
 pub const WATER_TINT: [u8; 4] = [63, 118, 228, 255];

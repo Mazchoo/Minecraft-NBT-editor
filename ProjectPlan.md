@@ -58,6 +58,10 @@ Imported once from a client `.jar` (the only supported source) and read back on 
     | `entity/enderdragon/dragon` | 256 | `head_dragon_{part}_{face}` |
 
     `{face}` is the face as unwrapped in the atlas (`ModelPart` order), not the side it is drawn on.
+*   **End portal surface.** `entity/end_portal` and `environment/end_sky` are baked into one
+    16x16 texture, `end_portal_surface`: the sky weighted by the first colour of vanilla's end
+    portal shader, plus one window of the star texture per further colour, each texel the brightest
+    of a 2x2 square.
 *   **Key.** The file stem (`glass`). One key, one file.
 *   **Record.** `Texture { file_name, format, has_alpha }`. `has_alpha` is set at extraction if any
     pixel has alpha below 255; `bmp` and `jpg` are always `false`.
@@ -163,7 +167,7 @@ again.
 | `models/block.rs` | `Face`, `Block`, `BlockPart`, `BasicBlock`, `FACE_CORNERS` |
 | `models/block_type.rs` | `BlockType` |
 | `models/element.rs` | `Element`, `ElementFace`, `ElementRotation`, `StateRotation`, tint table |
-| `models/sign.rs`, `models/banner.rs`, `models/chest.rs`, `models/bell.rs`, `models/head.rs`, `models/bed.rs`, `models/conduit.rs` | Hand-built geometry for signs, banners, chests, bells, mob heads, beds and the conduit |
+| `models/sign.rs`, `models/banner.rs`, `models/chest.rs`, `models/bell.rs`, `models/head.rs`, `models/bed.rs`, `models/conduit.rs`, `models/end_portal.rs` | Hand-built geometry for signs, banners, chests, bells, mob heads, beds, the conduit, the end portal and the end gateway |
 | `models/entity_model.rs` | `ModelBox`, `Placement`: vanilla entity-model boxes placed in block space; entity atlas tiles |
 | `custom_block_keys.rs` | `CustomBlockKey`: every block key with behaviour its model does not describe |
 | `rendering/block_mesh.rs` | `BlockVertex`, face emission |
@@ -186,6 +190,7 @@ A `Block` is one palette entry: `name`, `properties`, `block_type`, `parts` and 
 | `Head(HeadKind)` | no geometry, a mob head or skull, floor or wall | hand-built boxes |
 | `Bed` | no geometry, `*_bed` | hand-built boxes |
 | `Conduit` | no geometry, `conduit` | hand-built box |
+| `EndPortal(EndPortalKind)` | no geometry, `end_portal` / `end_gateway` | hand-built box |
 | `BlockEntity` | any other block with no geometry | inset placeholder cube |
 | `Basic(BasicBlock)` | parent `cube_all` or `cube_column`, no property rotation | full-cube fast path |
 | `Elements` | everything else | element list |
@@ -233,7 +238,7 @@ An element is a box `from`–`to` with an optional rotation, up to six faces, an
 *   `uv` defaults to the element bounds projected onto the face. Reversed rectangles mirror the
     texture.
 *   `uv_rotation` is 0, 90, 180 or 270.
-*   Tint comes from a fixed table by `CustomBlockKey`: grass green, foliage green, water blue,
+*   Tint comes from a fixed table by `CustomBlockKey`: grass green, foliage green, lily pad green, water blue,
     redstone by `power`, melon and pumpkin stems by `age`, otherwise white.
 *   Shading is multiplied into the vertex colour: `Down` 0.5, `Up` 1.0, `North`/`South` 0.8,
     `West`/`East` 0.6, or 1.0 with `shade: false`.
@@ -285,6 +290,8 @@ more than one part.
     far end, from the colour's bed atlas. The head half's pillow points `facing`. The mattress
     end each half shares with the other is not drawn.
 *   `Conduit`: an inactive conduit's 6x6x6 shell at the centre of the cell, from the `base` atlas.
+*   `EndPortal`: unshaded, `end_portal_surface` on every face drawn. The end portal is 6 to 12 units
+    up, top and bottom only. The end gateway is a full cube, each face culled by its neighbour.
 
 Entity-model boxes are placed as vanilla's renderer places them, Y down in the model, and each
 face draws the tile of the unwrapped face that lands there, with the UV orientation and rotation
@@ -314,7 +321,7 @@ when the world is marked dirty.
     only unreached space, and geometry inside it, are skipped. Limited to
     `Config::MAX_CAVITY_FLOOD_CELLS`; larger structures use neighbour culling only.
 *   `Block::occlusion_mask` gives the sides a block fully hides. `Invisible`, `BlockEntity`, `Sign`,
-    `Banner`, `Chest`, `Head`, `Bed` and `Conduit` hide nothing.
+    `Banner`, `Chest`, `Head`, `Bed`, `Conduit` and `EndPortal` hide nothing.
 
 ---
 

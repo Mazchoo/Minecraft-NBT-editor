@@ -18,9 +18,8 @@ pub fn is_bell(name: &str) -> bool {
 
 /// Body and lip of a hanging bell. The same for every attachment and facing.
 pub(crate) fn elements() -> Vec<Element> {
-    let face = |texture: &str, uv: [f32; 4]| {
-        Some(ElementFace::new(texture.to_owned(), uv, 0, None, None))
-    };
+    let face =
+        |texture: &str, uv: [f32; 4]| Some(ElementFace::new(texture.to_owned(), uv, 0, None, None));
     let sides = |uv: [f32; 4], up: [f32; 4], down: Option<ElementFace>| {
         let mut faces = [None, None, None, None, None, None];
         faces[Face::Down.index()] = down;

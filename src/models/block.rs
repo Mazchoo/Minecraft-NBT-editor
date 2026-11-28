@@ -353,6 +353,7 @@ impl Block {
             BlockType::Head(kind) => hand_built(kind.elements(&properties)),
             BlockType::Bed => hand_built(super::bed::elements(&name, &properties)),
             BlockType::Conduit => hand_built(super::conduit::elements()),
+            BlockType::EndPortal(kind) => hand_built(kind.elements()),
             BlockType::BlockEntity => vec![placeholder_part(
                 resolved
                     .parts
@@ -396,6 +397,7 @@ impl Block {
             | BlockType::Head(_)
             | BlockType::Bed
             | BlockType::Conduit
+            | BlockType::EndPortal(_)
             | BlockType::BlockEntity
             | BlockType::Invisible => false,
         };
@@ -441,6 +443,7 @@ impl Block {
             | BlockType::Head(_)
             | BlockType::Bed
             | BlockType::Conduit
+            | BlockType::EndPortal(_)
             | BlockType::BlockEntity
             | BlockType::Invisible => false,
         }
@@ -463,7 +466,8 @@ impl Block {
             | BlockType::Chest(_)
             | BlockType::Head(_)
             | BlockType::Bed
-            | BlockType::Conduit => {}
+            | BlockType::Conduit
+            | BlockType::EndPortal(_) => {}
             BlockType::Basic(_) => {
                 // Mirrors the fast path in the mesh builder: six unit-cube
                 // faces textured from the first element.
@@ -592,6 +596,7 @@ fn compute_covers(block_type: BlockType, parts: &[BlockPart]) -> [bool; 6] {
         | BlockType::Head(_)
         | BlockType::Bed
         | BlockType::Conduit
+        | BlockType::EndPortal(_)
         | BlockType::BlockEntity
         | BlockType::Invisible => [false; 6],
         BlockType::Elements => {

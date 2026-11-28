@@ -7,14 +7,19 @@ use std::path::{Path, PathBuf};
 use image::RgbaImage;
 
 use crate::config::Config;
-use crate::constants::ENTITY_TEXTURE_DIR;
+use crate::constants::{
+    END_PORTAL_SKY_TEXTURE, END_PORTAL_STARS_TEXTURE, END_PORTAL_SURFACE_TEXTURE,
+    ENTITY_TEXTURE_DIR,
+};
+use crate::models::end_portal::bake_surface;
 use crate::models::entity_model::{EntityAtlas, entity_atlas};
 use crate::textures::{ImageFormat, Texture, inspect_alpha};
 
 use super::{JarError, for_each_jar_file};
 
 /// Extracts `assets/{namespace}/textures/block/*.{png,bmp,jpg}` into `cache_dir`,
-/// plus the tiles cut from the entity atlases the editor draws blocks from.
+/// plus the tiles cut from the entity atlases the editor draws blocks from and
+/// the end portal surface baked from its star and sky textures.
 ///
 /// Each block texture is written under its original file name. The returned map is keyed
 /// by file stem (e.g. `glass`).
@@ -24,10 +29,12 @@ pub fn extract_from_jar(
 ) -> Result<HashMap<String, Texture>, JarError> {
     fs::create_dir_all(cache_dir)?;
     let mut textures = HashMap::new();
+    let mut end_portal = EndPortalSources::default();
     for_each_jar_file(jar_path, |name, bytes| {
         if let Some((path, atlas)) = match_entity_atlas(name) {
             textures.extend(ingest_entity_atlas(cache_dir, &path, &atlas, &bytes));
         }
+        end_portal.offer(name, &bytes);
         let Some((file_name, format)) = match_block_texture(name) else {
             return;
         };
@@ -35,6 +42,7 @@ pub fn extract_from_jar(
             textures.insert(key, texture);
         }
     })?;
+    textures.extend(end_portal.ingest(cache_dir));
     remove_stale_cache_files(cache_dir, &textures);
     Ok(textures)
 }
@@ -78,6 +86,17 @@ pub(crate) fn match_block_texture(entry_name: &str) -> Option<(String, ImageForm
 /// atlas the editor cuts into tiles, returning the path under `textures/`
 /// (`entity/chest/normal_left`) and the atlas.
 pub(crate) fn match_entity_atlas(entry_name: &str) -> Option<(String, EntityAtlas)> {
+    let path = texture_path(entry_name)?;
+    if !path.starts_with(ENTITY_TEXTURE_DIR) {
+        return None;
+    }
+    let atlas = entity_atlas(&path)?;
+    Some((path, atlas))
+}
+
+/// The path under `textures/`, without extension, of
+/// `assets/{namespace}/textures/{path}.png`.
+fn texture_path(entry_name: &str) -> Option<String> {
     let name = entry_name.replace('\\', "/");
     let mut parts = name.splitn(4, '/');
     let (assets, namespace, textures, rest) =
@@ -86,11 +105,74 @@ pub(crate) fn match_entity_atlas(entry_name: &str) -> Option<(String, EntityAtla
         return None;
     }
     let path = rest.strip_suffix(".png")?;
-    if !path.starts_with(ENTITY_TEXTURE_DIR) || path.contains("..") {
+    if path.contains("..") {
         return None;
     }
-    let atlas = entity_atlas(path)?;
-    Some((path.to_owned(), atlas))
+    Some(path.to_owned())
+}
+
+/// The jar entries the end portal surface is baked from, gathered during a
+/// walk of the jar.
+#[derive(Default)]
+pub(crate) struct EndPortalSources {
+    stars: Option<Vec<u8>>,
+    sky: Option<Vec<u8>>,
+}
+
+impl EndPortalSources {
+    /// Keeps `bytes` when `entry_name` is one of the sources.
+    pub(crate) fn offer(&mut self, entry_name: &str, bytes: &[u8]) {
+        match texture_path(entry_name).as_deref() {
+            Some(END_PORTAL_STARS_TEXTURE) => self.stars = Some(bytes.to_vec()),
+            Some(END_PORTAL_SKY_TEXTURE) => self.sky = Some(bytes.to_vec()),
+            _ => {}
+        }
+    }
+
+    /// Bakes the surface into `cache_dir`. `None`, with a warning, when a
+    /// source is missing or unreadable.
+    pub(crate) fn ingest(self, cache_dir: &Path) -> Option<(String, Texture)> {
+        let (Some(stars), Some(sky)) = (self.stars, self.sky) else {
+            log::warn!(
+                "{END_PORTAL_STARS_TEXTURE} or {END_PORTAL_SKY_TEXTURE} is not in the jar; \
+                 the end portal surface is not baked"
+            );
+            return None;
+        };
+        ingest_end_portal_surface(cache_dir, &stars, &sky)
+    }
+}
+
+/// Bakes the end portal surface from the PNG bytes of its star and sky
+/// textures and writes it into `cache_dir`.
+fn ingest_end_portal_surface(
+    cache_dir: &Path,
+    stars: &[u8],
+    sky: &[u8],
+) -> Option<(String, Texture)> {
+    let decode =
+        |bytes, path| match image::load_from_memory_with_format(bytes, image::ImageFormat::Png) {
+            Ok(image) => Some(image.to_rgba8()),
+            Err(err) => {
+                log::warn!("failed to decode {path}: {err}");
+                None
+            }
+        };
+    let surface = bake_surface(
+        &decode(sky, END_PORTAL_SKY_TEXTURE)?,
+        &decode(stars, END_PORTAL_STARS_TEXTURE)?,
+    );
+    let mut encoded = Vec::new();
+    if let Err(err) = surface.write_to(&mut Cursor::new(&mut encoded), image::ImageFormat::Png) {
+        log::warn!("failed to encode {END_PORTAL_SURFACE_TEXTURE}: {err}");
+        return None;
+    }
+    ingest_texture(
+        cache_dir,
+        format!("{END_PORTAL_SURFACE_TEXTURE}.png"),
+        ImageFormat::Png,
+        &encoded,
+    )
 }
 
 /// Matches an image file directly inside `assets/{namespace}/textures/{dirs}/`.

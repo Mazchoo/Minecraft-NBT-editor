@@ -6,7 +6,8 @@ use glam::Vec3;
 
 use super::block::Face;
 use crate::constants::{
-    AGE_PROPERTY, FOLIAGE_TINT, GRASS_TINT, NO_TINT, POWER_PROPERTY, STEM_TINTS, WATER_TINT,
+    AGE_PROPERTY, FOLIAGE_TINT, GRASS_TINT, LILY_PAD_TINT, NO_TINT, POWER_PROPERTY, STEM_TINTS,
+    WATER_TINT,
 };
 use crate::custom_block_keys::CustomBlockKey;
 
@@ -336,6 +337,7 @@ pub(crate) fn tint_color(
         | CustomBlockKey::DarkOakLeaves
         | CustomBlockKey::MangroveLeaves
         | CustomBlockKey::CherryLeaves => FOLIAGE_TINT,
+        CustomBlockKey::LilyPad => LILY_PAD_TINT,
         CustomBlockKey::WaterCauldron => WATER_TINT,
         _ => NO_TINT,
     }

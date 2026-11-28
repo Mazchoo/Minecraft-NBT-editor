@@ -55,6 +55,7 @@ impl BlockMesh {
             | BlockType::Head(_)
             | BlockType::Bed
             | BlockType::Conduit
+            | BlockType::EndPortal(_)
             | BlockType::BlockEntity => {
                 emit_parts(self, block, origin, layer_of, visible);
             }

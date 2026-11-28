@@ -6,6 +6,7 @@ pub mod block_type;
 pub mod chest;
 pub mod conduit;
 pub mod element;
+pub mod end_portal;
 pub mod entity_model;
 pub mod head;
 pub mod sign;

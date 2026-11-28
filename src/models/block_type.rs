@@ -3,6 +3,7 @@
 use super::banner::BannerKind;
 use super::block::BasicBlock;
 use super::chest::ChestKind;
+use super::end_portal::EndPortalKind;
 use super::head::HeadKind;
 use super::sign::SignKind;
 use crate::custom_block_keys::CustomBlockKey;
@@ -27,6 +28,9 @@ pub enum BlockType {
     Bed,
     /// A conduit: no model geometry, drawn from a hand-built box.
     Conduit,
+    /// An end portal or end gateway: no model geometry, drawn from a
+    /// hand-built box with the baked surface.
+    EndPortal(EndPortalKind),
     /// No geometry anywhere in the model chain: drawn as an inset placeholder.
     BlockEntity,
     /// Deliberately draws nothing: air, barrier, structure void.
@@ -58,6 +62,9 @@ impl BlockType {
             }
             if super::conduit::is_conduit(name) {
                 return Self::Conduit;
+            }
+            if let Some(kind) = EndPortalKind::from_name(name) {
+                return Self::EndPortal(kind);
             }
             return Self::BlockEntity;
         }
@@ -118,6 +125,10 @@ mod tests {
         assert_eq!(
             BlockType::classify("minecraft:conduit", None, false),
             BlockType::Conduit
+        );
+        assert_eq!(
+            BlockType::classify("minecraft:end_gateway", None, false),
+            BlockType::EndPortal(EndPortalKind::Gateway)
         );
         assert_eq!(
             BlockType::classify("minecraft:stone", Some("cube_all"), true),

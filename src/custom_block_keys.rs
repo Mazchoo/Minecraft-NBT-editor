@@ -65,6 +65,10 @@ custom_block_keys! {
 
     Conduit => "conduit",
 
+    /// Drawn by vanilla's end portal shader.
+    EndPortal => "end_portal",
+    EndGateway => "end_gateway",
+
     /// Its texture is drawn on hanging signs. Named `iron_chain` from 1.21.9.
     Chain => "chain",
     IronChain => "iron_chain",
@@ -92,6 +96,7 @@ custom_block_keys! {
     DarkOakLeaves => "dark_oak_leaves",
     MangroveLeaves => "mangrove_leaves",
     CherryLeaves => "cherry_leaves",
+    LilyPad => "lily_pad",
 
     WaterCauldron => "water_cauldron",
 
@@ -203,11 +208,17 @@ mod tests {
     #[test]
     fn families_match_the_longest_key() {
         let cases = [
-            ("minecraft:oak_wall_hanging_sign", CustomBlockKey::WallHangingSign),
+            (
+                "minecraft:oak_wall_hanging_sign",
+                CustomBlockKey::WallHangingSign,
+            ),
             ("minecraft:oak_hanging_sign", CustomBlockKey::HangingSign),
             ("minecraft:dark_oak_wall_sign", CustomBlockKey::WallSign),
             ("minecraft:dark_oak_sign", CustomBlockKey::Sign),
-            ("minecraft:light_blue_wall_banner", CustomBlockKey::WallBanner),
+            (
+                "minecraft:light_blue_wall_banner",
+                CustomBlockKey::WallBanner,
+            ),
             ("minecraft:light_blue_banner", CustomBlockKey::Banner),
             ("banner", CustomBlockKey::Banner),
             ("minecraft:light_gray_bed", CustomBlockKey::Bed),

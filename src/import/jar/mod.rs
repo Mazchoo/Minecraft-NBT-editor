@@ -16,7 +16,7 @@ use self::models::{
     remove_stale_cache_files, write_blockstates_manifest, write_manifest as write_models_manifest,
 };
 use self::textures::{
-    ingest_entity_atlas, ingest_texture, match_block_texture, match_entity_atlas,
+    EndPortalSources, ingest_entity_atlas, ingest_texture, match_block_texture, match_entity_atlas,
     remove_stale_cache_files as remove_stale_textures, write_manifest as write_textures_manifest,
 };
 
@@ -121,8 +121,10 @@ pub fn import_from_jar(
     let mut models = HashMap::new();
     let mut has_elements = HashMap::new();
     let mut definitions = HashMap::new();
+    let mut end_portal = EndPortalSources::default();
 
     for_each_jar_file(jar_path, |name, bytes| {
+        end_portal.offer(name, &bytes);
         if let Some((file_name, format)) = match_block_texture(name)
             && let Some((key, texture)) =
                 ingest_texture(texture_cache_dir, file_name, format, &bytes)
@@ -149,6 +151,7 @@ pub fn import_from_jar(
             definitions.insert(key, definition);
         }
     })?;
+    textures.extend(end_portal.ingest(texture_cache_dir));
 
     // Textures are complete after the walk. Write that manifest before model
     // parent-chain work and stale-file scans, which can take a long time.
@@ -257,6 +260,45 @@ mod tests {
         assert_eq!(imported.definitions.len(), 1);
         assert!(imported.definitions.contains_key("stone"));
         assert!(blockstates_manifest.is_file());
+
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn import_from_jar_bakes_the_end_portal_surface() {
+        let dir = temp_dir("jar-import-end-portal");
+        let jar_path = dir.join("client.jar");
+        let texture_cache = dir.join("textures");
+        let png = encode_png([10, 20, 30, 255]);
+        {
+            let file = fs::File::create(&jar_path).unwrap();
+            let mut zip = ZipWriter::new(file);
+            let options =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+            for path in [
+                crate::constants::END_PORTAL_STARS_TEXTURE,
+                crate::constants::END_PORTAL_SKY_TEXTURE,
+            ] {
+                zip.start_file(format!("assets/minecraft/textures/{path}.png"), options)
+                    .unwrap();
+                zip.write_all(&png).unwrap();
+            }
+            zip.finish().unwrap();
+        }
+
+        let imported = import_from_jar(
+            &jar_path,
+            &texture_cache,
+            &dir.join("models"),
+            &dir.join(crate::constants::TEXTURES_MANIFEST_FILE),
+            &dir.join(crate::constants::MODELS_MANIFEST_FILE),
+            &dir.join(crate::constants::BLOCKSTATES_MANIFEST_FILE),
+        )
+        .unwrap();
+        let surface = crate::constants::END_PORTAL_SURFACE_TEXTURE;
+        assert_eq!(imported.textures.len(), 1);
+        assert!(imported.textures.contains_key(surface));
+        assert!(texture_cache.join(format!("{surface}.png")).is_file());
 
         fs::remove_dir_all(dir).ok();
     }
