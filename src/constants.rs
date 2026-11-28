@@ -50,6 +50,15 @@ pub const CHEST_ATLAS_SIZE: u32 = 64;
 /// Prefix of the texture keys of tiles cut from chest atlases.
 pub const CHEST_TILE_PREFIX: &str = "chest";
 
+/// Block texture of the top of a bell: 8x8 texels at the top-left.
+pub const BELL_TOP_TEXTURE: &str = "bell_top";
+
+/// Block texture of a side of a bell: the 6x7 body above the 8x2 lip.
+pub const BELL_SIDE_TEXTURE: &str = "bell_side";
+
+/// Block texture of the underside of a bell: 8x8 texels at the top-left.
+pub const BELL_BOTTOM_TEXTURE: &str = "bell_bottom";
+
 /// Namespace assumed for a block id written without one, as Minecraft does.
 pub const DEFAULT_NAMESPACE: &str = "minecraft";
 

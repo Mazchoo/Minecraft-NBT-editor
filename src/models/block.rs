@@ -386,6 +386,17 @@ impl Block {
                 })
                 .collect(),
         };
+        let mut parts = parts;
+        if matches!(block_type, BlockType::Elements) && super::bell::is_bell(&name) {
+            // The models are the frame alone; the bell hangs the same way in
+            // every one of them.
+            parts.push(BlockPart {
+                model: name.clone(),
+                elements: super::bell::elements(),
+                rotation: StateRotation::IDENTITY,
+                uvlock: false,
+            });
+        }
 
         let covers = compute_covers(block_type, &parts);
         let opaque = match block_type {

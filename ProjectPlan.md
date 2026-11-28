@@ -152,7 +152,7 @@ again.
 | `models/block.rs` | `Face`, `Block`, `BlockPart`, `BasicBlock`, `FACE_CORNERS` |
 | `models/block_type.rs` | `BlockType` |
 | `models/element.rs` | `Element`, `ElementFace`, `ElementRotation`, `StateRotation`, tint table |
-| `models/sign.rs`, `models/banner.rs`, `models/chest.rs` | Hand-built geometry for signs, banners and chests |
+| `models/sign.rs`, `models/banner.rs`, `models/chest.rs`, `models/bell.rs` | Hand-built geometry for signs, banners, chests and bells |
 | `custom_block_keys.rs` | `CustomBlockKey`: every block key with behaviour its model does not describe |
 | `rendering/block_mesh.rs` | `BlockVertex`, face emission |
 | `rendering/blocks.rs` | Mesh build from the world, texture array, block pipeline |
@@ -257,6 +257,9 @@ more than one part.
 *   `Chest`: base, lid and lock, closed, turned by `facing`. Faces use the chest tiles (3) of the
     `normal`, `trapped` or `ender` atlas. `type=left` / `right` use the `_left` / `_right` atlas
     and reach the shared side of the cell; `ender_chest` is always single.
+
+`bell` has geometry for its frame only. Its body (6x7x6) and lip (8x2x8) are added as a further
+part, unrotated, from the `bell_top`, `bell_side` and `bell_bottom` textures.
 
 ### 5.8. Textures on the GPU
 

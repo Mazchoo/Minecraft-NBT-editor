@@ -43,6 +43,9 @@ custom_block_keys! {
     TrappedChest => "trapped_chest",
     EnderChest => "ender_chest",
 
+    /// Its models hold only the frame.
+    Bell => "bell",
+
     /// Its texture is drawn on hanging signs. Named `iron_chain` from 1.21.9.
     Chain => "chain",
     IronChain => "iron_chain",
