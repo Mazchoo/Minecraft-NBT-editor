@@ -70,6 +70,7 @@ impl Viewport {
             &response,
             rect,
             aspect,
+            world,
         );
 
         // Middle double-click: snap the camera square-on to the face under
@@ -192,4 +193,18 @@ fn face_at(
     let origin = camera.eye();
     let dir = camera.cursor_ray(cursor_ndc(rect, pos), aspect);
     raycast::pick(origin, dir, |cell| world.is_occupied(cell))
+}
+
+/// The world point on the block face or ground under screen position `pos`,
+/// if it is inside the viewport and over either.
+fn point_at(
+    camera: &Camera,
+    pos: egui::Pos2,
+    rect: egui::Rect,
+    aspect: f32,
+    world: &World,
+) -> Option<Vec3> {
+    let hit = face_at(camera, pos, rect, aspect, world)?;
+    let dir = camera.cursor_ray(cursor_ndc(rect, pos), aspect);
+    Some(hit.point_on_ray(camera.eye(), dir))
 }

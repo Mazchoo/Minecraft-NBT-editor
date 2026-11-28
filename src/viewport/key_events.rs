@@ -2,6 +2,8 @@ use eframe::egui;
 use glam::{Vec2, Vec3};
 
 use super::camera::Camera;
+use super::point_at;
+use crate::world::World;
 
 pub(super) fn cursor_ndc(rect: egui::Rect, pos: egui::Pos2) -> Vec2 {
     Vec2::new(
@@ -17,13 +19,15 @@ pub fn handle_input(
     response: &egui::Response,
     rect: egui::Rect,
     aspect: f32,
+    world: &World,
 ) {
     if response.hovered() {
         // Scroll: zoom toward the world point under the cursor.
         let scroll = ui.input(|i| i.smooth_scroll_delta.y);
         if scroll != 0.0 {
             if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
-                camera.zoom_toward(cursor_ndc(rect, pos), scroll, aspect);
+                let target = point_at(camera, pos, rect, aspect, world);
+                camera.zoom_toward(cursor_ndc(rect, pos), scroll, aspect, target);
             }
         }
 
@@ -49,13 +53,17 @@ pub fn handle_input(
         }
     }
 
-    // Middle-mouse drag: orbit around the point under the cursor at press,
-    // keeping that world point under the mouse as it moves (like zoom).
+    // Middle-mouse drag: orbit around the block or ground point under the
+    // cursor at press, keeping that world point under the mouse as it moves.
     // Handled outside the hover check so tracking continues if the cursor
     // leaves the rect mid-drag.
     if response.drag_started_by(egui::PointerButton::Middle) {
         if let Some(pos) = response.interact_pointer_pos() {
-            *orbit_pivot = Some(camera.get_orbit_point(cursor_ndc(rect, pos), aspect));
+            let ndc = cursor_ndc(rect, pos);
+            *orbit_pivot = Some(
+                point_at(camera, pos, rect, aspect, world)
+                    .unwrap_or_else(|| camera.point_at_focus_depth(ndc, aspect)),
+            );
         }
     }
     if response.dragged_by(egui::PointerButton::Middle) {

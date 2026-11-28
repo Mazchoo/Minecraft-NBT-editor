@@ -64,6 +64,12 @@ impl Config {
     /// the cursor.
     pub const MIN_ZOOM_DISTANCE: f32 = 0.5;
 
+    /// Radians the camera turns per pixel of middle-mouse drag.
+    pub const ORBIT_SENSITIVITY: f32 = 0.008;
+
+    /// Steepest tilt, in radians up or down, a middle-mouse drag reaches.
+    pub const MAX_ORBIT_PITCH: f32 = 89.0 * std::f32::consts::PI / 180.0;
+
     /// Most variants of one block the picker cycles through with Tab.
     pub const MAX_BLOCK_VARIANTS: usize = 1024;
 

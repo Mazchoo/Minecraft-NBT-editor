@@ -369,10 +369,9 @@ translation, rotation, and line, cuboid and cylinder placement.
 
 ## 8. Open Issues
 
-- Snapping to view and then rotating the camera snaps the camera below the ground
+- Liquids needs to be treated like full blocks
 - Placeholder block should not cull faces of anything around it
 - Check transparent blocks do not cull faces
-- Release mode does not keep orientation in one place when rotating view
 - Going below the ground should make the ground unselectable
 - Q should reset view to origin
 - R will rotate current block on selected face

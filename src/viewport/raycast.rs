@@ -25,6 +25,13 @@ impl FaceHit {
     pub fn face_centre(self) -> Vec3 {
         self.cell.as_vec3() + Vec3::splat(0.5) + self.face.offset().as_vec3() * 0.5
     }
+
+    /// Where the ray `origin + t * dir` crosses the plane of the hit face.
+    pub fn point_on_ray(self, origin: Vec3, dir: Vec3) -> Vec3 {
+        let normal = self.face.offset().as_vec3();
+        let t = (self.face_centre() - origin).dot(normal) / dir.dot(normal);
+        origin + dir * t
+    }
 }
 
 /// Nearest hit along `origin + t * dir` (`dir` need not be normalised, `t > 0`).

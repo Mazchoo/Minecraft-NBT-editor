@@ -1,5 +1,5 @@
 use crate::config::Config;
-use glam::{Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
+use glam::{Mat4, Vec2, Vec3};
 
 /// Blender-style orbit camera: a focus point plus yaw/pitch/distance.
 pub struct Camera {
@@ -40,19 +40,23 @@ impl Camera {
         Vec3::new(cos_pitch * sin_yaw, sin_pitch, -cos_pitch * cos_yaw)
     }
 
-    /// Horizontal unit vector pointing to the camera's right for `yaw`.
-    fn right_for_yaw(yaw: f32) -> Vec3 {
-        Vec3::new(yaw.cos(), 0.0, yaw.sin())
+    /// Horizontal unit vector pointing to the camera's right. Derived from
+    /// yaw alone so it stays defined when looking straight up or down.
+    fn right(&self) -> Vec3 {
+        Vec3::new(self.yaw.cos(), 0.0, self.yaw.sin())
     }
 
-    /// The camera's up direction. Derived from yaw and pitch rather than
-    /// world +Y so it stays defined when looking straight up or down.
     fn up(&self) -> Vec3 {
-        Self::right_for_yaw(self.yaw).cross(self.forward())
+        self.right().cross(self.forward())
     }
 
     pub fn eye(&self) -> Vec3 {
         self.focus - self.forward() * self.distance
+    }
+
+    /// Moves the camera, orientation unchanged, so the eye sits at `eye`.
+    fn set_eye(&mut self, eye: Vec3) {
+        self.focus = eye + self.forward() * self.distance;
     }
 
     /// Looks straight at the point `centre` of a face from
@@ -75,142 +79,55 @@ impl Camera {
         proj * view
     }
 
+    /// World-space ray from the eye through the given NDC cursor position,
+    /// scaled so it advances one block of view depth per unit.
+    fn view_ray(&self, ndc: Vec2, aspect: f32) -> Vec3 {
+        let half_height = (self.fov_y * 0.5).tan();
+        self.forward()
+            + self.right() * (ndc.x * half_height * aspect)
+            + self.up() * (ndc.y * half_height)
+    }
+
     /// World-space ray direction from the eye through the given NDC cursor position.
     pub fn cursor_ray(&self, ndc: Vec2, aspect: f32) -> Vec3 {
-        let inv = self.view_proj(aspect).inverse();
-        let far = inv * glam::Vec4::new(ndc.x, ndc.y, 1.0, 1.0);
-        (far.xyz() / far.w - self.eye()).normalize()
+        self.view_ray(ndc, aspect).normalize()
     }
 
-    /// World pivot under the cursor for orbit/zoom: ray ∩ mesh, or the XZ
-    /// plane (y = 0) when nothing is hit.
-    pub fn get_orbit_point(&self, ndc: Vec2, aspect: f32) -> Vec3 {
-        let ray = self.cursor_ray(ndc, aspect);
-        match self.ground_hit_distance(ray) {
-            Some(t) => self.eye() + ray * t,
-            None => Vec3::new(self.focus.x, 0.0, self.focus.z),
-        }
-    }
-
-    /// Distance from the eye along `ray` to the XZ plane (y = 0), if the ray
-    /// reaches it.
-    // TODO: intersect displayed mesh when one exists; fall back to y = 0.
-    fn ground_hit_distance(&self, ray: Vec3) -> Option<f32> {
-        if ray.y.abs() < 1e-6 {
-            return None;
-        }
-        let t = -self.eye().y / ray.y;
-        (t >= 0.0).then_some(t)
+    /// The point under the given NDC cursor position at the focus point's
+    /// view depth. Used as the orbit pivot when the cursor is over nothing.
+    pub fn point_at_focus_depth(&self, ndc: Vec2, aspect: f32) -> Vec3 {
+        self.eye() + self.view_ray(ndc, aspect) * self.distance
     }
 
     /// Dolly the camera along the cursor ray at a fixed number of blocks per
     /// scroll unit, wherever the camera is. Zooming in stops just short of
-    /// the point under the cursor.
-    pub fn zoom_toward(&mut self, ndc: Vec2, scroll_delta: f32, aspect: f32) {
+    /// `target`, the world point under the cursor, if there is one.
+    pub fn zoom_toward(&mut self, ndc: Vec2, scroll_delta: f32, aspect: f32, target: Option<Vec3>) {
         let ray = self.cursor_ray(ndc, aspect);
         let mut travel = scroll_delta * Config::ZOOM_SPEED;
-        if travel > 0.0 {
-            if let Some(hit) = self.ground_hit_distance(ray) {
-                travel = travel.min((hit - Config::MIN_ZOOM_DISTANCE).max(0.0));
-            }
+        if travel > 0.0
+            && let Some(target) = target
+        {
+            let room = (target - self.eye()).dot(ray) - Config::MIN_ZOOM_DISTANCE;
+            travel = travel.min(room.max(0.0));
         }
         // Eye and focus move together, so the orbit distance is unchanged.
         self.focus += ray * travel;
     }
 
     /// Turntable orbit around `pivot`, driven by a mouse drag delta in screen
-    /// pixels (positive y = dragging down). After rotating, the camera is
-    /// translated so `pivot` stays under the current cursor (same idea as
-    /// zoom-toward-cursor).
+    /// pixels. The camera turns, then sits where `pivot` is under the cursor
+    /// at the view depth it had before, so the pivot follows the mouse.
     pub fn orbit_about(&mut self, pivot: Vec3, drag_delta: Vec2, cursor_ndc: Vec2, aspect: f32) {
-        const SENSITIVITY: f32 = 0.008; // radians per pixel
-
-        let drag_yaw = drag_delta.x * SENSITIVITY;
-        let drag_pitch = (self.pitch + drag_delta.y * SENSITIVITY)
-            .clamp(-89f32.to_radians(), 89f32.to_radians())
-            - self.pitch;
-
-        if drag_yaw != 0.0 || drag_pitch != 0.0 {
-            let eye_offset = self.eye() - pivot;
-            let focus_offset = self.focus - pivot;
-            let (eye_offset, focus_offset) =
-                Self::update_offsets_from_yaw(eye_offset, focus_offset, drag_yaw);
-            // Taken from yaw, not from the look direction, so the tilt axis
-            // is defined when the camera starts out looking straight down.
-            let right = Self::right_for_yaw(self.yaw + drag_yaw);
-            let (eye_offset, focus_offset) =
-                Self::update_offsets_from_pitch(eye_offset, focus_offset, right, drag_pitch);
-            self.recalculate_camera_from_offsets(pivot, eye_offset, focus_offset);
-        }
-
-        self.keep_point_at_ndc(pivot, cursor_ndc, aspect);
-    }
-
-    #[inline]
-    fn update_offsets_from_yaw(
-        eye_offset: Vec3,
-        focus_offset: Vec3,
-        drag_yaw: f32,
-    ) -> (Vec3, Vec3) {
-        if drag_yaw == 0.0 {
-            return (eye_offset, focus_offset);
-        }
-        Self::rotate_offsets(eye_offset, focus_offset, Quat::from_rotation_y(drag_yaw))
-    }
-
-    #[inline]
-    fn update_offsets_from_pitch(
-        eye_offset: Vec3,
-        focus_offset: Vec3,
-        right: Vec3,
-        drag_pitch: f32,
-    ) -> (Vec3, Vec3) {
-        if drag_pitch == 0.0 {
-            return (eye_offset, focus_offset);
-        }
-        Self::rotate_offsets(
-            eye_offset,
-            focus_offset,
-            Quat::from_axis_angle(right, drag_pitch),
-        )
-    }
-
-    #[inline]
-    fn rotate_offsets(eye_offset: Vec3, focus_offset: Vec3, rotation: Quat) -> (Vec3, Vec3) {
-        (rotation * eye_offset, rotation * focus_offset)
-    }
-
-    #[inline]
-    fn recalculate_camera_from_offsets(
-        &mut self,
-        pivot: Vec3,
-        eye_offset: Vec3,
-        focus_offset: Vec3,
-    ) {
-        let focus = pivot + focus_offset;
-        let to_focus = focus - (pivot + eye_offset);
-        let distance = to_focus.length().max(0.5);
-        let forward = to_focus.try_normalize().unwrap_or(Vec3::NEG_Z);
-        self.focus = focus;
-        self.yaw = forward.x.atan2(-forward.z);
-        self.pitch = forward.y.clamp(-0.999999, 0.999999).asin();
-        self.distance = distance;
-    }
-
-    /// Translate the camera (orientation unchanged) so `point` projects to `ndc`.
-    fn keep_point_at_ndc(&mut self, point: Vec3, ndc: Vec2, aspect: f32) {
-        let view_proj = self.view_proj(aspect);
-        let clip = view_proj * point.extend(1.0);
-        if clip.w.abs() < 1e-8 {
+        let depth = (pivot - self.eye()).dot(self.forward());
+        if depth <= 0.0 {
             return;
         }
-        let depth = clip.z / clip.w;
-        let inv = view_proj.inverse();
-        let target = inv * Vec4::new(ndc.x, ndc.y, depth, 1.0);
-        if target.w.abs() < 1e-8 {
-            return;
-        }
-        self.focus += point - target.xyz() / target.w;
+
+        self.yaw -= drag_delta.x * Config::ORBIT_SENSITIVITY;
+        self.pitch = (self.pitch + drag_delta.y * Config::ORBIT_SENSITIVITY)
+            .clamp(-Config::MAX_ORBIT_PITCH, Config::MAX_ORBIT_PITCH);
+        self.set_eye(pivot - self.view_ray(cursor_ndc, aspect) * depth);
     }
 
     /// Pan the focus point in the camera's horizontal plane.
@@ -227,5 +144,62 @@ impl Camera {
 
         let direction = (forward_flat * input.y + right * input.x).normalize_or_zero();
         self.focus += direction * Config::PAN_SPEED * dt;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ASPECT: f32 = 1.6;
+
+    fn ndc_of(camera: &Camera, point: Vec3) -> Vec2 {
+        let clip = camera.view_proj(ASPECT) * point.extend(1.0);
+        Vec2::new(clip.x / clip.w, clip.y / clip.w)
+    }
+
+    #[test]
+    fn cursor_ray_matches_the_projection() {
+        let camera = Camera::default();
+        let ndc = Vec2::new(0.4, -0.7);
+        let point = camera.eye() + camera.cursor_ray(ndc, ASPECT) * 25.0;
+        assert!((ndc_of(&camera, point) - ndc).length() < 1e-4);
+    }
+
+    #[test]
+    fn orbit_keeps_the_pivot_under_the_cursor() {
+        let mut camera = Camera::default();
+        let pivot = Vec3::new(3.0, 2.0, -4.0);
+        let mut ndc = ndc_of(&camera, pivot);
+        for _ in 0..2000 {
+            ndc += Vec2::new(0.0004, 0.0002);
+            camera.orbit_about(pivot, Vec2::new(1.0, -0.5), ndc, ASPECT);
+            assert!((ndc_of(&camera, pivot) - ndc).length() < 1e-3);
+        }
+        assert!((camera.distance - Camera::default().distance).abs() < 1e-3);
+    }
+
+    #[test]
+    fn starting_an_orbit_after_a_face_snap_does_not_move_the_camera() {
+        let mut camera = Camera::default();
+        camera.view_face(Vec3::new(1.0, 0.5, 0.5), Vec3::X);
+        let eye = camera.eye();
+        // Above the horizon, where the cursor is over neither block nor ground.
+        let ndc = Vec2::new(0.3, 0.6);
+        let pivot = camera.point_at_focus_depth(ndc, ASPECT);
+        camera.orbit_about(pivot, Vec2::ZERO, ndc, ASPECT);
+        assert!((camera.eye() - eye).length() < 1e-4);
+    }
+
+    #[test]
+    fn orbit_step_moves_the_eye_in_proportion_to_the_drag() {
+        let mut camera = Camera::default();
+        camera.view_face(Vec3::new(1.0, 0.5, 0.5), Vec3::X);
+        let eye = camera.eye();
+        let pivot = Vec3::new(1.0, 0.1, 0.5);
+        let ndc = ndc_of(&camera, pivot);
+        camera.orbit_about(pivot, Vec2::new(1.0, 1.0), ndc, ASPECT);
+        // One pixel of drag turns the eye about a pivot ~2 blocks away.
+        assert!((camera.eye() - eye).length() < 0.1);
     }
 }
