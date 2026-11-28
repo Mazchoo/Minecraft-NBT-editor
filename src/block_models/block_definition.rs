@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 
 use super::model_json::asset_stem;
-use crate::constants::PROPERTY_VALUE_SETS;
+use crate::constants::{DOWN_PROPERTY, PROPERTY_VALUE_SETS, TRUE_VALUE};
 
 /// One `assets/{namespace}/blockstates/{block}.json`, reduced to what the
 /// editor uses. Model ids are stems; weighted model lists keep their first
@@ -168,7 +168,8 @@ impl BlockDefinition {
     /// `limit` of them.
     ///
     /// A multipart block lists every combination of the property values its
-    /// conditions test.
+    /// conditions test. [`DOWN_PROPERTY`] varies slowest, `true` first, so the
+    /// states attached to the block below come first.
     pub fn variants(&self, limit: usize) -> Vec<BTreeMap<String, String>> {
         match self {
             Self::Variants(variants) => variants
@@ -177,11 +178,19 @@ impl BlockDefinition {
                 .map(|variant| variant.properties.clone())
                 .collect(),
             Self::Multipart(_) => {
-                let axes: Vec<(String, Vec<String>)> = self
+                let mut axes: Vec<(String, Vec<String>)> = self
                     .multipart_values()
                     .into_iter()
                     .map(|(name, seen)| (name, complete_values(seen)))
                     .collect();
+                if let Some(index) = axes.iter().position(|(name, _)| name == DOWN_PROPERTY) {
+                    let (name, mut values) = axes.remove(index);
+                    if let Some(on) = values.iter().position(|value| value == TRUE_VALUE) {
+                        let on = values.remove(on);
+                        values.insert(0, on);
+                    }
+                    axes.insert(0, (name, values));
+                }
                 let mut combinations = vec![BTreeMap::new()];
                 for (name, values) in &axes {
                     combinations = combinations
@@ -489,6 +498,29 @@ mod tests {
         assert_eq!(fence().default_variant(&variants), 0);
         assert_eq!(wire().variants(100).len(), 9);
         assert_eq!(wire().variants(4).len(), 4);
+    }
+
+    #[test]
+    fn states_attached_below_come_first() {
+        let plant = BlockDefinition::from_json(
+            br#"{"multipart": [
+                {"when": {"up": "true"}, "apply": {"model": "plant_side", "x": 270}},
+                {"when": {"down": "true"}, "apply": {"model": "plant_side", "x": 90}},
+                {"when": {"down": "false"}, "apply": {"model": "plant_noside", "x": 90}}
+            ]}"#,
+        )
+        .unwrap();
+        let variants = plant.variants(100);
+        assert_eq!(
+            variants,
+            [
+                props(&[("down", "true"), ("up", "false")]),
+                props(&[("down", "true"), ("up", "true")]),
+                props(&[("down", "false"), ("up", "false")]),
+                props(&[("down", "false"), ("up", "true")]),
+            ]
+        );
+        assert_eq!(plant.default_variant(&variants), 0);
     }
 
     #[test]

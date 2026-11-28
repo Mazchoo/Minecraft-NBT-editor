@@ -1042,18 +1042,3 @@ mod tests {
         fs::remove_dir_all(dir).ok();
     }
 }
-
-#[cfg(test)]
-mod chorus_variants_probe {
-    use super::*;
-    #[test]
-    fn probe() {
-        let library = ModelLibrary::from_cache_dir(std::path::Path::new("C:/Users/CYBORG/AppData/Local/Temp/claude/c60e44214406c637/aea74248-9cbc-4aec-9eac-7bf90a798abd/scratchpad/mc"));
-        for name in ["chorus_plant", "minecraft:chorus_plant"] {
-            let (variants, start) = library.variants(name);
-            println!("PROBE {name}: {} variants, start {start}", variants.len());
-            for v in variants.iter().take(3) { println!("PROBE   {v:?}"); }
-        }
-        println!("PROBE names contain chorus_plant: {}", library.block_names().iter().any(|n| n.as_str() == "chorus_plant"));
-    }
-}

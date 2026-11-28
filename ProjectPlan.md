@@ -373,7 +373,9 @@ the world with it.
 
 *   The right panel lists each block once, by blockstate key, whatever its variants.
 *   Selecting a block lists its states (4.2) and starts on an unrotated variant, or for a
-    multipart block the first combination that draws a model.
+    multipart block the first combination that draws a model. A multipart block's `down`
+    property varies slowest with `true` first, so it starts attached to the block below: a chorus
+    plant starts as its core with an arm to the ground.
 *   Properties hand-built geometry reads but the blockstate file does not list multiply the
     states, default value first: beds list `part=foot` and `part=head`.
 *   **Tab** moves to the next variant and **Shift+Tab** to the previous, wrapping. Both are

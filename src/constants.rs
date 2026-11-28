@@ -37,6 +37,14 @@ pub const PROPERTY_VALUE_SETS: [&[&str]; 4] = [
     &["none", "small", "large"],
 ];
 
+/// Multipart property joining a block to the block below (chorus plant, glow
+/// lichen). The picker lists its `true` states first, so a picked block
+/// starts attached to the ground.
+pub const DOWN_PROPERTY: &str = "down";
+
+/// Value of a boolean blockstate property that is on.
+pub const TRUE_VALUE: &str = "true";
+
 /// Blockstate property naming the direction a block points.
 pub const FACING_PROPERTY: &str = "facing";
 
