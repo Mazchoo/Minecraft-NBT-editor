@@ -4,6 +4,7 @@ use super::banner::BannerKind;
 use super::block::BasicBlock;
 use super::chest::ChestKind;
 use super::sign::SignKind;
+use crate::custom_block_keys::CustomBlockKey;
 
 /// Classification of a resolved block. Families are opt-in specialisations;
 /// anything with geometry that no family claims is [`Self::Elements`].
@@ -52,15 +53,13 @@ impl BlockType {
 }
 
 fn is_invisible(name: &str) -> bool {
-    matches!(
-        block_stem(name),
-        "air" | "cave_air" | "void_air" | "barrier" | "structure_void" | "light"
-    )
-}
-
-fn block_stem(name: &str) -> &str {
-    let path = name.rsplit_once(':').map(|(_, rest)| rest).unwrap_or(name);
-    path.rsplit_once('/').map(|(_, stem)| stem).unwrap_or(path)
+    CustomBlockKey::from_name(name).is_some_and(|key| {
+        key.is_air()
+            || matches!(
+                key,
+                CustomBlockKey::Barrier | CustomBlockKey::StructureVoid | CustomBlockKey::Light
+            )
+    })
 }
 
 #[cfg(test)]

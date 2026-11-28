@@ -4,6 +4,7 @@ mod app;
 mod block_models;
 mod config;
 mod constants;
+mod custom_block_keys;
 mod import;
 mod models;
 mod rendering;

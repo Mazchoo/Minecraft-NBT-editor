@@ -10,6 +10,7 @@ use super::block::Face;
 use super::element::{Element, ElementFace};
 use super::sign::{facing_yaw, placed_box};
 use crate::constants::{CHEST_TILE_PREFIX, CHEST_TYPE_PROPERTY};
+use crate::custom_block_keys::CustomBlockKey;
 
 /// The chest materials, told apart by block name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,12 +52,10 @@ struct ChestBox {
 impl ChestKind {
     /// Recognises a chest from its block name (`minecraft:trapped_chest`).
     pub fn from_name(name: &str) -> Option<Self> {
-        let path = name.rsplit_once(':').map(|(_, rest)| rest).unwrap_or(name);
-        let stem = path.rsplit_once('/').map(|(_, s)| s).unwrap_or(path);
-        match stem {
-            "chest" => Some(Self::Normal),
-            "trapped_chest" => Some(Self::Trapped),
-            "ender_chest" => Some(Self::Ender),
+        match CustomBlockKey::from_name(name)? {
+            CustomBlockKey::Chest => Some(Self::Normal),
+            CustomBlockKey::TrappedChest => Some(Self::Trapped),
+            CustomBlockKey::EnderChest => Some(Self::Ender),
             _ => None,
         }
     }

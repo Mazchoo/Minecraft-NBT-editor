@@ -153,6 +153,7 @@ again.
 | `models/block_type.rs` | `BlockType` |
 | `models/element.rs` | `Element`, `ElementFace`, `ElementRotation`, `StateRotation`, tint table |
 | `models/sign.rs`, `models/banner.rs`, `models/chest.rs` | Hand-built geometry for signs, banners and chests |
+| `custom_block_keys.rs` | `CustomBlockKey`: every block key with behaviour its model does not describe |
 | `rendering/block_mesh.rs` | `BlockVertex`, face emission |
 | `rendering/blocks.rs` | Mesh build from the world, texture array, block pipeline |
 | `rendering/visibility.rs` | Neighbour and cavity culling |
@@ -217,8 +218,8 @@ An element is a box `from`–`to` with an optional rotation, up to six faces, an
 *   `uv` defaults to the element bounds projected onto the face. Reversed rectangles mirror the
     texture.
 *   `uv_rotation` is 0, 90, 180 or 270.
-*   Tint comes from a fixed table by block name: grass green, foliage green, water blue, redstone by
-    `power`, otherwise white.
+*   Tint comes from a fixed table by `CustomBlockKey`: grass green, foliage green, water blue,
+    redstone by `power`, melon and pumpkin stems by `age`, otherwise white.
 *   Shading is multiplied into the vertex colour: `Down` 0.5, `Up` 1.0, `North`/`South` 0.8,
     `West`/`East` 0.6, or 1.0 with `shade: false`.
 

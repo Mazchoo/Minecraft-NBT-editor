@@ -10,7 +10,8 @@ use flate2::read::GzDecoder;
 use glam::IVec3;
 use serde::Deserialize;
 
-use crate::constants::{AIR_BLOCK_NAMES, GZIP_MAGIC};
+use crate::constants::GZIP_MAGIC;
+use crate::custom_block_keys::CustomBlockKey;
 use crate::world::{BlockState, World};
 
 #[derive(Debug)]
@@ -136,7 +137,7 @@ pub fn from_bytes(bytes: &[u8]) -> Result<World, StructureError> {
                 state: block.state,
                 palette_len: palette.len(),
             })?;
-        if AIR_BLOCK_NAMES.contains(&palette[state].name.as_str()) {
+        if CustomBlockKey::from_name(&palette[state].name).is_some_and(CustomBlockKey::is_air) {
             continue;
         }
         blocks.push((IVec3::new(x, y, z), state as u32));

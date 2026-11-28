@@ -10,6 +10,7 @@ use glam::Vec3;
 
 use super::block::Face;
 use super::element::{Axis, Element, ElementFace, ElementRotation};
+use crate::custom_block_keys::CustomBlockKey;
 
 /// Vanilla scales the standing/wall sign entity model by 2/3.
 const SIGN_SCALE: f32 = 2.0 / 3.0;
@@ -44,18 +45,12 @@ pub enum SignKind {
 impl SignKind {
     /// Recognises a sign from its block name (`minecraft:oak_wall_sign`).
     pub fn from_name(name: &str) -> Option<Self> {
-        let path = name.rsplit_once(':').map(|(_, rest)| rest).unwrap_or(name);
-        let stem = path.rsplit_once('/').map(|(_, s)| s).unwrap_or(path);
-        if stem.ends_with("_wall_hanging_sign") {
-            Some(Self::WallHanging)
-        } else if stem.ends_with("_hanging_sign") {
-            Some(Self::Hanging)
-        } else if stem.ends_with("_wall_sign") {
-            Some(Self::Wall)
-        } else if stem.ends_with("_sign") {
-            Some(Self::Standing)
-        } else {
-            None
+        match CustomBlockKey::from_name(name)? {
+            CustomBlockKey::WallHangingSign => Some(Self::WallHanging),
+            CustomBlockKey::HangingSign => Some(Self::Hanging),
+            CustomBlockKey::WallSign => Some(Self::Wall),
+            CustomBlockKey::Sign => Some(Self::Standing),
+            _ => None,
         }
     }
 

@@ -5,6 +5,10 @@ use std::collections::BTreeMap;
 use glam::Vec3;
 
 use super::block::Face;
+use crate::constants::{
+    AGE_PROPERTY, FOLIAGE_TINT, GRASS_TINT, NO_TINT, POWER_PROPERTY, STEM_TINTS, WATER_TINT,
+};
+use crate::custom_block_keys::CustomBlockKey;
 
 /// A single-axis rotation in model space.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -288,31 +292,51 @@ pub(crate) fn tint_color(
     tint_index: Option<u8>,
     properties: &BTreeMap<String, String>,
 ) -> [u8; 4] {
-    let Some(_index) = tint_index else {
-        return [255, 255, 255, 255];
+    if tint_index.is_none() {
+        return NO_TINT;
+    }
+    let Some(key) = CustomBlockKey::from_name(name) else {
+        return NO_TINT;
     };
-    let stem = {
-        let path = name.rsplit_once(':').map(|(_, rest)| rest).unwrap_or(name);
-        path.rsplit_once('/').map(|(_, s)| s).unwrap_or(path)
-    };
-    if stem.contains("redstone") {
-        let power = properties
-            .get("power")
-            .and_then(|s| s.parse::<u8>().ok())
-            .unwrap_or(0)
-            .min(15);
-        return redstone_color(power);
+    let oldest_stem = STEM_TINTS.len() - 1;
+    match key {
+        CustomBlockKey::RedstoneWire => {
+            let power = properties
+                .get(POWER_PROPERTY)
+                .and_then(|s| s.parse::<u8>().ok())
+                .unwrap_or(0)
+                .min(15);
+            redstone_color(power)
+        }
+        CustomBlockKey::AttachedMelonStem | CustomBlockKey::AttachedPumpkinStem => {
+            STEM_TINTS[oldest_stem]
+        }
+        CustomBlockKey::MelonStem | CustomBlockKey::PumpkinStem => {
+            let age = properties
+                .get(AGE_PROPERTY)
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(0)
+                .min(oldest_stem);
+            STEM_TINTS[age]
+        }
+        CustomBlockKey::GrassBlock | CustomBlockKey::ShortGrass | CustomBlockKey::TallGrass => {
+            GRASS_TINT
+        }
+        CustomBlockKey::Fern
+        | CustomBlockKey::LargeFern
+        | CustomBlockKey::PottedFern
+        | CustomBlockKey::Vine
+        | CustomBlockKey::OakLeaves
+        | CustomBlockKey::SpruceLeaves
+        | CustomBlockKey::BirchLeaves
+        | CustomBlockKey::JungleLeaves
+        | CustomBlockKey::AcaciaLeaves
+        | CustomBlockKey::DarkOakLeaves
+        | CustomBlockKey::MangroveLeaves
+        | CustomBlockKey::CherryLeaves => FOLIAGE_TINT,
+        CustomBlockKey::WaterCauldron => WATER_TINT,
+        _ => NO_TINT,
     }
-    if stem.contains("grass") || stem == "dirt_path" {
-        return [145, 189, 89, 255];
-    }
-    if stem.contains("leaves") || stem.contains("vine") || stem.contains("fern") {
-        return [72, 181, 24, 255];
-    }
-    if stem.contains("water") || stem.contains("kelp") {
-        return [63, 118, 228, 255];
-    }
-    [255, 255, 255, 255]
 }
 
 fn redstone_color(power: u8) -> [u8; 4] {

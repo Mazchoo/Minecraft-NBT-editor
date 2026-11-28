@@ -53,10 +53,36 @@ pub const CHEST_TILE_PREFIX: &str = "chest";
 /// Namespace assumed for a block id written without one, as Minecraft does.
 pub const DEFAULT_NAMESPACE: &str = "minecraft";
 
-/// Blocks that stand for an empty cell. A structure import leaves their
-/// cells empty, so they stay free to place into.
-pub const AIR_BLOCK_NAMES: [&str; 3] =
-    ["minecraft:air", "minecraft:cave_air", "minecraft:void_air"];
+/// Blockstate property naming a crop's growth stage.
+pub const AGE_PROPERTY: &str = "age";
+
+/// Blockstate property naming the signal strength in redstone wire.
+pub const POWER_PROPERTY: &str = "power";
+
+/// Tint that leaves a texture's own colours unchanged.
+pub const NO_TINT: [u8; 4] = [255; 4];
+
+/// Tint of grass.
+pub const GRASS_TINT: [u8; 4] = [145, 189, 89, 255];
+
+/// Tint of leaves, vines and ferns.
+pub const FOLIAGE_TINT: [u8; 4] = [72, 181, 24, 255];
+
+/// Tint of water.
+pub const WATER_TINT: [u8; 4] = [63, 118, 228, 255];
+
+/// Tint of a melon or pumpkin stem at each growth stage, youngest first. A
+/// stem joined to its fruit takes the last.
+pub const STEM_TINTS: [[u8; 4]; 8] = [
+    [0, 255, 0, 255],
+    [32, 247, 4, 255],
+    [64, 239, 8, 255],
+    [96, 231, 12, 255],
+    [128, 223, 16, 255],
+    [160, 215, 20, 255],
+    [192, 207, 24, 255],
+    [224, 199, 28, 255],
+];
 
 /// First two bytes of a gzip stream. Structure files are normally gzipped.
 pub const GZIP_MAGIC: [u8; 2] = [0x1f, 0x8b];

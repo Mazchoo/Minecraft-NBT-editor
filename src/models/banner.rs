@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 
 use super::element::Element;
 use super::sign::{facing_yaw, rotation_yaw, wood_box};
+use crate::custom_block_keys::CustomBlockKey;
 
 /// Vanilla scales the banner entity model by 2/3.
 const BANNER_SCALE: f32 = 2.0 / 3.0;
@@ -42,13 +43,10 @@ pub enum BannerKind {
 impl BannerKind {
     /// Recognises a banner from its block name (`minecraft:red_wall_banner`).
     pub fn from_name(name: &str) -> Option<Self> {
-        let stem = stem(name);
-        if stem.ends_with("_wall_banner") {
-            Some(Self::Wall)
-        } else if stem == "banner" || stem.ends_with("_banner") {
-            Some(Self::Standing)
-        } else {
-            None
+        match CustomBlockKey::from_name(name)? {
+            CustomBlockKey::WallBanner => Some(Self::Wall),
+            CustomBlockKey::Banner => Some(Self::Standing),
+            _ => None,
         }
     }
 
@@ -124,17 +122,11 @@ impl BannerKind {
 /// Texture standing in for the flag's cloth: the wool of the banner's colour.
 /// A name without a colour (the bare `banner` model) reads as white.
 pub(crate) fn flag_texture(name: &str) -> String {
-    let stem = stem(name);
-    let color = stem
-        .strip_suffix("_wall_banner")
-        .or_else(|| stem.strip_suffix("_banner"))
+    let color = CustomBlockKey::from_name(name)
+        .and_then(|key| key.member(name))
+        .filter(|color| !color.is_empty())
         .unwrap_or("white");
     format!("{color}_wool")
-}
-
-fn stem(name: &str) -> &str {
-    let path = name.rsplit_once(':').map(|(_, rest)| rest).unwrap_or(name);
-    path.rsplit_once('/').map(|(_, s)| s).unwrap_or(path)
 }
 
 #[cfg(test)]

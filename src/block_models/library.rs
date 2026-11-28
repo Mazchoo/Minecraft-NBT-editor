@@ -8,6 +8,7 @@ use std::time::SystemTime;
 
 use crate::config::Config;
 use crate::constants::{AXIS_PROPERTY, FACING_PROPERTY};
+use crate::custom_block_keys::CustomBlockKey;
 use crate::import::jar::JarError;
 use crate::import::jar::models::import_into_cache;
 
@@ -335,9 +336,11 @@ impl ModelLibrary {
             }
             block.parts.push(part);
         }
-        if stem.ends_with("_hanging_sign")
-            && block.parts.first().is_some_and(|part| part.block_entity)
-        {
+        let hanging_sign = matches!(
+            CustomBlockKey::from_name(&stem),
+            Some(CustomBlockKey::HangingSign | CustomBlockKey::WallHangingSign)
+        );
+        if hanging_sign && block.parts.first().is_some_and(|part| part.block_entity) {
             block.chain_texture = self.chain_texture();
         }
         block
@@ -347,7 +350,7 @@ impl ModelLibrary {
     /// same name. Wall signs and banners have none of their own and share
     /// the standing sign's model and the one `banner` model.
     fn undefined_model_stem(&self, stem: &str) -> String {
-        match wall_sign_model_stem(stem).or_else(|| banner_model_stem(stem)) {
+        match shared_model_stem(stem) {
             Some(shared) if !self.models.contains_key(stem) => shared,
             _ => stem.to_owned(),
         }
@@ -397,9 +400,9 @@ impl ModelLibrary {
     /// Texture of the chain block, whose model is `chain` before 1.21.9 and
     /// `iron_chain` after.
     fn chain_texture(&self) -> Option<String> {
-        ["chain", "iron_chain"]
+        [CustomBlockKey::Chain, CustomBlockKey::IronChain]
             .into_iter()
-            .find_map(|stem| self.merge_textures(stem)?.remove("particle"))
+            .find_map(|chain| self.merge_textures(chain.key())?.remove("particle"))
     }
 
     /// Child-first texture merge. Returns `None` when the parent chain exceeds the depth cap.
@@ -448,20 +451,21 @@ impl ModelLibrary {
     }
 }
 
-/// Model stem a wall-mounted sign shares with its free-standing counterpart:
-/// `oak_wall_sign` -> `oak_sign`, `oak_wall_hanging_sign` -> `oak_hanging_sign`.
-fn wall_sign_model_stem(stem: &str) -> Option<String> {
-    if let Some(wood) = stem.strip_suffix("_wall_hanging_sign") {
-        Some(format!("{wood}_hanging_sign"))
-    } else {
-        stem.strip_suffix("_wall_sign")
-            .map(|wood| format!("{wood}_sign"))
+/// Model stem a block borrows from another. A wall-mounted sign shares its
+/// free-standing counterpart's: `oak_wall_sign` -> `oak_sign`,
+/// `oak_wall_hanging_sign` -> `oak_hanging_sign`. All banners share one:
+/// `red_banner` and `red_wall_banner` -> `banner`.
+fn shared_model_stem(stem: &str) -> Option<String> {
+    let key = CustomBlockKey::from_name(stem)?;
+    let member = key.member(stem)?;
+    match key {
+        CustomBlockKey::WallHangingSign => Some(CustomBlockKey::HangingSign.of_member(member)),
+        CustomBlockKey::WallSign => Some(CustomBlockKey::Sign.of_member(member)),
+        CustomBlockKey::WallBanner | CustomBlockKey::Banner => {
+            Some(CustomBlockKey::Banner.key().to_owned())
+        }
+        _ => None,
     }
-}
-
-/// Model stem shared by all banners: `red_banner` and `red_wall_banner` -> `banner`.
-fn banner_model_stem(stem: &str) -> Option<String> {
-    stem.ends_with("_banner").then(|| "banner".to_owned())
 }
 
 fn merge_chain(chain: &[&BlockModel]) -> BTreeMap<String, String> {
