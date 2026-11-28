@@ -52,6 +52,9 @@ impl BlockMesh {
             | BlockType::Sign(_)
             | BlockType::Banner(_)
             | BlockType::Chest(_)
+            | BlockType::Head(_)
+            | BlockType::Bed
+            | BlockType::Conduit
             | BlockType::BlockEntity => {
                 emit_parts(self, block, origin, layer_of, visible);
             }

@@ -50,6 +50,73 @@ pub const CHEST_ATLAS_SIZE: u32 = 64;
 /// Prefix of the texture keys of tiles cut from chest atlases.
 pub const CHEST_TILE_PREFIX: &str = "chest";
 
+/// Folder, under `textures/`, of the entity textures cut into tiles.
+pub const ENTITY_TEXTURE_DIR: &str = "entity";
+
+/// Chest atlases, under `textures/`; one file per material and half.
+pub const CHEST_TEXTURE_DIR: &str = "entity/chest";
+
+/// Bed atlases, under `textures/`; one file per colour.
+pub const BED_TEXTURE_DIR: &str = "entity/bed";
+
+/// Side length, in texels, of the layout bed atlases are drawn on.
+pub const BED_ATLAS_SIZE: u32 = 64;
+
+/// Prefix of the texture keys of tiles cut from bed atlases.
+pub const BED_TILE_PREFIX: &str = "bed";
+
+/// Blockstate property naming which half of a bed a block is.
+pub const BED_PART_PROPERTY: &str = "part";
+
+/// Value of [`BED_PART_PROPERTY`] for the half with the pillow.
+pub const BED_HEAD_PART: &str = "head";
+
+/// Value of [`BED_PART_PROPERTY`] for the other half, a bed's default state.
+pub const BED_FOOT_PART: &str = "foot";
+
+/// Colour of a bed or banner whose block name carries none.
+pub const DEFAULT_DYE_COLOUR: &str = "white";
+
+/// Atlas of an inactive conduit's shell, under `textures/`.
+pub const CONDUIT_TEXTURE: &str = "entity/conduit/base";
+
+/// Width, in texels, of the layout the conduit atlas is drawn on.
+pub const CONDUIT_ATLAS_SIZE: u32 = 32;
+
+/// Prefix of the texture keys of tiles cut from the conduit atlas.
+pub const CONDUIT_TILE_PREFIX: &str = "conduit";
+
+/// Mob head atlases, under `textures/`.
+pub const SKELETON_SKULL_TEXTURE: &str = "entity/skeleton/skeleton";
+pub const WITHER_SKELETON_SKULL_TEXTURE: &str = "entity/skeleton/wither_skeleton";
+pub const ZOMBIE_HEAD_TEXTURE: &str = "entity/zombie/zombie";
+pub const CREEPER_HEAD_TEXTURE: &str = "entity/creeper/creeper";
+pub const PIGLIN_HEAD_TEXTURE: &str = "entity/piglin/piglin";
+pub const DRAGON_HEAD_TEXTURE: &str = "entity/enderdragon/dragon";
+/// The default skin a player head without an owner shows: `wide/steve` from
+/// 1.19.3, `steve` before.
+pub const PLAYER_HEAD_TEXTURES: [&str; 2] = ["entity/player/wide/steve", "entity/steve"];
+
+/// Width, in texels, of the layout mob head atlases other than the dragon's
+/// are drawn on.
+pub const HEAD_ATLAS_SIZE: u32 = 64;
+
+/// Width, in texels, of the layout the dragon atlas is drawn on.
+pub const DRAGON_ATLAS_SIZE: u32 = 256;
+
+/// Prefix of the texture keys of tiles cut from mob head atlases.
+pub const HEAD_TILE_PREFIX: &str = "head";
+
+/// Height, in model units, at which a floor dragon head's model origin sits:
+/// vanilla lifts the 3/4-scale model by 0.374375 blocks.
+pub const DRAGON_HEAD_LIFT: f32 = 5.99;
+
+/// Scale vanilla draws the dragon head at.
+pub const DRAGON_HEAD_SCALE: f32 = 0.75;
+
+/// How much the hat layer of a zombie or player head stands off the head.
+pub const HEAD_HAT_INFLATE: f32 = 0.25;
+
 /// Block texture of the top of a bell: 8x8 texels at the top-left.
 pub const BELL_TOP_TEXTURE: &str = "bell_top";
 

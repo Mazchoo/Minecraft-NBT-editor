@@ -1,9 +1,13 @@
 pub mod banner;
+pub mod bed;
 pub mod bell;
 pub mod block;
 pub mod block_type;
 pub mod chest;
+pub mod conduit;
 pub mod element;
+pub mod entity_model;
+pub mod head;
 pub mod sign;
 
 #[allow(unused_imports)] // public module API consumed as drawing and GPU land

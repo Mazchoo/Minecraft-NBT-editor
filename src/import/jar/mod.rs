@@ -16,7 +16,7 @@ use self::models::{
     remove_stale_cache_files, write_blockstates_manifest, write_manifest as write_models_manifest,
 };
 use self::textures::{
-    ingest_chest_atlas, ingest_texture, match_block_texture, match_chest_atlas,
+    ingest_entity_atlas, ingest_texture, match_block_texture, match_entity_atlas,
     remove_stale_cache_files as remove_stale_textures, write_manifest as write_textures_manifest,
 };
 
@@ -129,8 +129,13 @@ pub fn import_from_jar(
         {
             textures.insert(key, texture);
         }
-        if let Some(stem) = match_chest_atlas(name) {
-            textures.extend(ingest_chest_atlas(texture_cache_dir, &stem, &bytes));
+        if let Some((path, atlas)) = match_entity_atlas(name) {
+            textures.extend(ingest_entity_atlas(
+                texture_cache_dir,
+                &path,
+                &atlas,
+                &bytes,
+            ));
         }
         if let Some(file_name) = match_block_model(name)
             && let Some((key, model, elements)) = ingest_model(model_cache_dir, file_name, &bytes)

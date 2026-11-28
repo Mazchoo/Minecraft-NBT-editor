@@ -325,46 +325,34 @@ impl Block {
             BlockType::Invisible => None,
             _ => resolved.particle_texture.clone(),
         };
+        // Hand-built elements already carry the block's orientation.
+        let hand_built = |elements| {
+            vec![BlockPart {
+                model: resolved
+                    .parts
+                    .first()
+                    .map_or_else(|| "missing".to_owned(), |part| part.model.clone()),
+                elements,
+                rotation: StateRotation::IDENTITY,
+                uvlock: false,
+            }]
+        };
         let parts = match block_type {
             BlockType::Invisible => Vec::new(),
-            BlockType::Sign(kind) => vec![BlockPart {
-                model: resolved
-                    .parts
-                    .first()
-                    .map_or_else(|| "missing".to_owned(), |part| part.model.clone()),
-                elements: kind.elements(
-                    &properties,
-                    particle_texture.as_deref().unwrap_or(""),
-                    resolved.chain_texture.as_deref(),
-                ),
-                // The elements already carry the sign's orientation.
-                rotation: StateRotation::IDENTITY,
-                uvlock: false,
-            }],
-            BlockType::Banner(kind) => vec![BlockPart {
-                model: resolved
-                    .parts
-                    .first()
-                    .map_or_else(|| "missing".to_owned(), |part| part.model.clone()),
-                elements: kind.elements(
-                    &properties,
-                    particle_texture.as_deref().unwrap_or(""),
-                    &super::banner::flag_texture(&name),
-                ),
-                // The elements already carry the banner's orientation.
-                rotation: StateRotation::IDENTITY,
-                uvlock: false,
-            }],
-            BlockType::Chest(kind) => vec![BlockPart {
-                model: resolved
-                    .parts
-                    .first()
-                    .map_or_else(|| "missing".to_owned(), |part| part.model.clone()),
-                elements: kind.elements(&properties),
-                // The elements already carry the chest's orientation.
-                rotation: StateRotation::IDENTITY,
-                uvlock: false,
-            }],
+            BlockType::Sign(kind) => hand_built(kind.elements(
+                &properties,
+                particle_texture.as_deref().unwrap_or(""),
+                resolved.chain_texture.as_deref(),
+            )),
+            BlockType::Banner(kind) => hand_built(kind.elements(
+                &properties,
+                particle_texture.as_deref().unwrap_or(""),
+                &super::banner::flag_texture(&name),
+            )),
+            BlockType::Chest(kind) => hand_built(kind.elements(&properties)),
+            BlockType::Head(kind) => hand_built(kind.elements(&properties)),
+            BlockType::Bed => hand_built(super::bed::elements(&name, &properties)),
+            BlockType::Conduit => hand_built(super::conduit::elements()),
             BlockType::BlockEntity => vec![placeholder_part(
                 resolved
                     .parts
@@ -405,6 +393,9 @@ impl Block {
             BlockType::Sign(_)
             | BlockType::Banner(_)
             | BlockType::Chest(_)
+            | BlockType::Head(_)
+            | BlockType::Bed
+            | BlockType::Conduit
             | BlockType::BlockEntity
             | BlockType::Invisible => false,
         };
@@ -447,6 +438,9 @@ impl Block {
             BlockType::Sign(_)
             | BlockType::Banner(_)
             | BlockType::Chest(_)
+            | BlockType::Head(_)
+            | BlockType::Bed
+            | BlockType::Conduit
             | BlockType::BlockEntity
             | BlockType::Invisible => false,
         }
@@ -466,7 +460,10 @@ impl Block {
             | BlockType::BlockEntity
             | BlockType::Sign(_)
             | BlockType::Banner(_)
-            | BlockType::Chest(_) => {}
+            | BlockType::Chest(_)
+            | BlockType::Head(_)
+            | BlockType::Bed
+            | BlockType::Conduit => {}
             BlockType::Basic(_) => {
                 // Mirrors the fast path in the mesh builder: six unit-cube
                 // faces textured from the first element.
@@ -592,6 +589,9 @@ fn compute_covers(block_type: BlockType, parts: &[BlockPart]) -> [bool; 6] {
         BlockType::Sign(_)
         | BlockType::Banner(_)
         | BlockType::Chest(_)
+        | BlockType::Head(_)
+        | BlockType::Bed
+        | BlockType::Conduit
         | BlockType::BlockEntity
         | BlockType::Invisible => [false; 6],
         BlockType::Elements => {

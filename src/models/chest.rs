@@ -7,8 +7,9 @@
 use std::collections::BTreeMap;
 
 use super::block::Face;
-use super::element::{Element, ElementFace};
-use super::sign::{facing_yaw, placed_box};
+use super::element::Element;
+use super::entity_model::{self, AtlasTile, ModelBox, Placement};
+use super::sign::facing_yaw;
 use crate::constants::{CHEST_TILE_PREFIX, CHEST_TYPE_PROPERTY};
 use crate::custom_block_keys::CustomBlockKey;
 
@@ -29,24 +30,6 @@ pub(crate) enum ChestHalf {
     Left,
     /// Joined to the block on its east when facing south.
     Right,
-}
-
-/// One face of a chest box, cut out of an atlas.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ChestTile {
-    /// Texture key, and file stem, of the tile.
-    pub key: String,
-    /// `[x, y, width, height]` within the atlas, in texels of a 64x64 atlas.
-    pub region: [u32; 4],
-}
-
-/// One box of a south-facing chest, in model units, unwrapped at `tex` in the
-/// atlas the way vanilla entity models are.
-struct ChestBox {
-    part: &'static str,
-    from: [u32; 3],
-    size: [u32; 3],
-    tex: [u32; 2],
 }
 
 impl ChestKind {
@@ -77,41 +60,16 @@ impl ChestKind {
         };
         let atlas = format!("{}{}", self.material(), half.atlas_suffix());
         let yaw = facing_yaw(properties);
+        // The boxes are laid out in block space, Y up, so the atlas, drawn
+        // for a model whose Y axis points down, lands upside down.
         half.boxes()
             .iter()
             .map(|chest_box| {
-                let mut faces = [None, None, None, None, None, None];
-                for face in Face::ALL {
-                    if half.hides(chest_box.part, face) {
-                        continue;
-                    }
-                    let [_, _, width, height] = chest_box.region(face);
-                    let (w, h) = (width as f32, height as f32);
-                    // The atlas is drawn for a model whose Y axis points down,
-                    // so every tile is upside down on the box.
-                    let uv = match face {
-                        Face::Down => [0.0, 0.0, w, h],
-                        Face::North | Face::South => [w, h, 0.0, 0.0],
-                        Face::Up | Face::West | Face::East => [0.0, h, w, 0.0],
-                    };
-                    faces[face.index()] = Some(ElementFace::new(
-                        tile_key(&atlas, chest_box.part, face),
-                        uv,
-                        0,
-                        None,
-                        None,
-                    ));
-                }
-                let [x, y, z] = chest_box.from.map(|v| v as f32);
-                let [w, h, d] = chest_box.size.map(|v| v as f32);
-                placed_box(
-                    [x + w * 0.5, z + d * 0.5],
-                    [w * 0.5, d * 0.5],
-                    y,
-                    y + h,
+                Placement::IDENTITY.element(
+                    chest_box,
+                    |face| entity_model::tile_key(CHEST_TILE_PREFIX, &atlas, chest_box.part, face),
+                    |side| half.hides(chest_box.part, side),
                     yaw,
-                    0.0,
-                    faces,
                 )
             })
             .collect()
@@ -146,33 +104,19 @@ impl ChestHalf {
         }
     }
 
-    /// Base, lid and lock. A double chest's halves reach the shared side of
-    /// their cells and split the lock between them.
-    fn boxes(self) -> [ChestBox; 3] {
+    /// Base, lid and lock of a south-facing chest, in block space. A double
+    /// chest's halves reach the shared side of their cells and split the lock
+    /// between them.
+    fn boxes(self) -> [ModelBox; 3] {
         let (x, width, lock_x, lock_width) = match self {
-            Self::Single => (1, 14, 7, 2),
-            Self::Left => (0, 15, 0, 1),
-            Self::Right => (1, 15, 15, 1),
+            Self::Single => (1.0, 14, 7.0, 2),
+            Self::Left => (0.0, 15, 0.0, 1),
+            Self::Right => (1.0, 15, 15.0, 1),
         };
         [
-            ChestBox {
-                part: "base",
-                from: [x, 0, 1],
-                size: [width, 10, 14],
-                tex: [0, 19],
-            },
-            ChestBox {
-                part: "lid",
-                from: [x, 9, 1],
-                size: [width, 5, 14],
-                tex: [0, 0],
-            },
-            ChestBox {
-                part: "lock",
-                from: [lock_x, 7, 15],
-                size: [lock_width, 4, 1],
-                tex: [0, 0],
-            },
+            ModelBox::new("base", [x, 0.0, 1.0], [width, 10, 14], [0, 19]),
+            ModelBox::new("lid", [x, 9.0, 1.0], [width, 5, 14], [0, 0]),
+            ModelBox::new("lock", [lock_x, 7.0, 15.0], [lock_width, 4, 1], [0, 0]),
         ]
     }
 
@@ -189,41 +133,14 @@ impl ChestHalf {
     }
 
     /// Tiles to cut from the atlas with file stem `atlas`.
-    pub(crate) fn tiles(self, atlas: &str) -> Vec<ChestTile> {
-        let mut tiles = Vec::new();
-        for chest_box in self.boxes() {
-            for face in Face::ALL {
-                if !self.hides(chest_box.part, face) {
-                    tiles.push(ChestTile {
-                        key: tile_key(atlas, chest_box.part, face),
-                        region: chest_box.region(face),
-                    });
-                }
-            }
-        }
-        tiles
+    pub(crate) fn tiles(self, atlas: &str) -> Vec<AtlasTile> {
+        entity_model::tiles(
+            CHEST_TILE_PREFIX,
+            atlas,
+            &self.boxes(),
+            |chest_box, side| self.hides(chest_box.part, side),
+        )
     }
-}
-
-impl ChestBox {
-    /// `[x, y, width, height]` of `face` in the atlas: `Down` and `Up` side by
-    /// side above a strip of `West`, `North`, `East`, `South`.
-    fn region(&self, face: Face) -> [u32; 4] {
-        let [w, h, d] = self.size;
-        let [u, v] = self.tex;
-        match face {
-            Face::Down => [u + d, v, w, d],
-            Face::Up => [u + d + w, v, w, d],
-            Face::West => [u, v + d, d, h],
-            Face::North => [u + d, v + d, w, h],
-            Face::East => [u + d + w, v + d, d, h],
-            Face::South => [u + d + w + d, v + d, w, h],
-        }
-    }
-}
-
-fn tile_key(atlas: &str, part: &str, face: Face) -> String {
-    format!("{CHEST_TILE_PREFIX}_{atlas}_{part}_{}", face.name())
 }
 
 #[cfg(test)]

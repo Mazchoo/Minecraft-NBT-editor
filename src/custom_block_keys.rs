@@ -1,6 +1,8 @@
 //! Block keys the editor gives behaviour their models do not describe: tints,
 //! hand-built geometry, shared models and blocks that draw nothing.
 
+use crate::constants::{BED_FOOT_PART, BED_HEAD_PART, BED_PART_PROPERTY};
+
 macro_rules! custom_block_keys {
     ($($(#[$doc:meta])* $variant:ident => $key:literal,)*) => {
         /// A block key with custom behaviour. Every such key is named here and
@@ -46,6 +48,23 @@ custom_block_keys! {
     /// Its models hold only the frame.
     Bell => "bell",
 
+    SkeletonSkull => "skeleton_skull",
+    SkeletonWallSkull => "skeleton_wall_skull",
+    WitherSkeletonSkull => "wither_skeleton_skull",
+    WitherSkeletonWallSkull => "wither_skeleton_wall_skull",
+    ZombieHead => "zombie_head",
+    ZombieWallHead => "zombie_wall_head",
+    PlayerHead => "player_head",
+    PlayerWallHead => "player_wall_head",
+    CreeperHead => "creeper_head",
+    CreeperWallHead => "creeper_wall_head",
+    PiglinHead => "piglin_head",
+    PiglinWallHead => "piglin_wall_head",
+    DragonHead => "dragon_head",
+    DragonWallHead => "dragon_wall_head",
+
+    Conduit => "conduit",
+
     /// Its texture is drawn on hanging signs. Named `iron_chain` from 1.21.9.
     Chain => "chain",
     IronChain => "iron_chain",
@@ -88,6 +107,8 @@ custom_block_keys! {
     WallBanner => "wall_banner",
     /// Family: one per colour. Its key alone is the model all banners share.
     Banner => "banner",
+    /// Family: one per colour. Its key alone is the model all beds share.
+    Bed => "bed",
 }
 
 impl CustomBlockKey {
@@ -114,6 +135,7 @@ impl CustomBlockKey {
                 | Self::Sign
                 | Self::WallBanner
                 | Self::Banner
+                | Self::Bed
         )
     }
 
@@ -136,6 +158,16 @@ impl CustomBlockKey {
     /// `Sign.of_member("oak")` is `oak_sign`.
     pub fn of_member(self, member: &str) -> String {
         format!("{member}_{}", self.key())
+    }
+
+    /// Properties the editor's geometry reads that the block's blockstate
+    /// file does not list, with their values, default first. The picker
+    /// offers them as further variants.
+    pub const fn unlisted_properties(self) -> &'static [(&'static str, &'static [&'static str])] {
+        match self {
+            Self::Bed => &[(BED_PART_PROPERTY, &[BED_FOOT_PART, BED_HEAD_PART])],
+            _ => &[],
+        }
     }
 
     /// Whether the block stands for an empty cell.
@@ -178,6 +210,7 @@ mod tests {
             ("minecraft:light_blue_wall_banner", CustomBlockKey::WallBanner),
             ("minecraft:light_blue_banner", CustomBlockKey::Banner),
             ("banner", CustomBlockKey::Banner),
+            ("minecraft:light_gray_bed", CustomBlockKey::Bed),
         ];
         for (name, key) in cases {
             assert_eq!(CustomBlockKey::from_name(name), Some(key), "{name}");

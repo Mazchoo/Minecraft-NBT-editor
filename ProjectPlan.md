@@ -44,9 +44,20 @@ Imported once from a client `.jar` (the only supported source) and read back on 
 
 *   **Extraction.** Entries matching `assets/{namespace}/textures/block/{file}.{png|bmp|jpg}` are
     written to `./texture_cache/` under their original name.
-*   **Chest tiles.** Entries matching `assets/{namespace}/textures/entity/chest/{file}.png` are
-    atlases laid out on a 64x64 grid. Each is cut into one 16x16 file per drawn box face, the face
-    at the top-left: `chest_{file}_{base|lid|lock}_{face}.png` (`chest_normal_left_lid_up`).
+*   **Entity tiles.** These `assets/{namespace}/textures/{path}.png` entries are entity atlases.
+    Each is cut into one file per unwrapped box face, the face at the top-left of a 16x16 square,
+    one texel per model unit. A file wider than its layout is the layout scaled up, and so are its
+    tiles.
+
+    | Path | Layout | Key |
+    | --- | --- | --- |
+    | `entity/chest/{file}` | 64 | `chest_{file}_{base\|lid\|lock}_{face}` |
+    | `entity/bed/{colour}` | 64 | `bed_{colour}_{part}_{face}` |
+    | `entity/conduit/base` | 32 | `conduit_base_shell_{face}` |
+    | `entity/skeleton/skeleton`, `entity/skeleton/wither_skeleton`, `entity/zombie/zombie`, `entity/creeper/creeper`, `entity/piglin/piglin`, `entity/player/wide/steve` or `entity/steve` | 64 | `head_{file}_{part}_{face}` |
+    | `entity/enderdragon/dragon` | 256 | `head_dragon_{part}_{face}` |
+
+    `{face}` is the face as unwrapped in the atlas (`ModelPart` order), not the side it is drawn on.
 *   **Key.** The file stem (`glass`). One key, one file.
 *   **Record.** `Texture { file_name, format, has_alpha }`. `has_alpha` is set at extraction if any
     pixel has alpha below 255; `bmp` and `jpg` are always `false`.
@@ -152,7 +163,8 @@ again.
 | `models/block.rs` | `Face`, `Block`, `BlockPart`, `BasicBlock`, `FACE_CORNERS` |
 | `models/block_type.rs` | `BlockType` |
 | `models/element.rs` | `Element`, `ElementFace`, `ElementRotation`, `StateRotation`, tint table |
-| `models/sign.rs`, `models/banner.rs`, `models/chest.rs`, `models/bell.rs` | Hand-built geometry for signs, banners, chests and bells |
+| `models/sign.rs`, `models/banner.rs`, `models/chest.rs`, `models/bell.rs`, `models/head.rs`, `models/bed.rs`, `models/conduit.rs` | Hand-built geometry for signs, banners, chests, bells, mob heads, beds and the conduit |
+| `models/entity_model.rs` | `ModelBox`, `Placement`: vanilla entity-model boxes placed in block space; entity atlas tiles |
 | `custom_block_keys.rs` | `CustomBlockKey`: every block key with behaviour its model does not describe |
 | `rendering/block_mesh.rs` | `BlockVertex`, face emission |
 | `rendering/blocks.rs` | Mesh build from the world, texture array, block pipeline |
@@ -171,6 +183,9 @@ A `Block` is one palette entry: `name`, `properties`, `block_type`, `parts` and 
 | `Sign(SignKind)` | no geometry, `*_sign` / `*_wall_sign` / `*_hanging_sign` / `*_wall_hanging_sign` | hand-built boxes |
 | `Banner(BannerKind)` | no geometry, `*_banner` / `*_wall_banner` | hand-built boxes |
 | `Chest(ChestKind)` | no geometry, `chest` / `trapped_chest` / `ender_chest` | hand-built boxes |
+| `Head(HeadKind)` | no geometry, a mob head or skull, floor or wall | hand-built boxes |
+| `Bed` | no geometry, `*_bed` | hand-built boxes |
+| `Conduit` | no geometry, `conduit` | hand-built box |
 | `BlockEntity` | any other block with no geometry | inset placeholder cube |
 | `Basic(BasicBlock)` | parent `cube_all` or `cube_column`, no property rotation | full-cube fast path |
 | `Elements` | everything else | element list |
@@ -238,11 +253,12 @@ those properties turn every part instead:
 | `axis=z` | x 90 |
 | `facing=up` | none |
 | `facing=down` | x 180 |
-| `facing=south` / `west` / `north` / `east` | x 90, then y 0 / 90 / 180 / 270 |
+| `facing=north` / `east` / `south` / `west` | x 90, then y 0 / 90 / 180 / 270 |
 
 `facing` turns the block so its top points that way and its bottom rests on the opposite side.
 
-It is applied about the block centre `(8, 8, 8)`, X then Y, after element rotation. A rotated part
+It is applied about the block centre `(8, 8, 8)`, X then Y, after element rotation. X 90 turns
+north to down and up to north; Y 90 turns north to east. A rotated part
 culls against the rotated `cullface` direction. `uvlock` counter-rotates `Up`/`Down` UVs by the Y
 rotation. A `Basic` block with a non-identity rotation is drawn as `Elements`, as is a block of
 more than one part.
@@ -257,6 +273,22 @@ more than one part.
 *   `Chest`: base, lid and lock, closed, turned by `facing`. Faces use the chest tiles (3) of the
     `normal`, `trapped` or `ender` atlas. `type=left` / `right` use the `_left` / `_right` atlas
     and reach the shared side of the cell; `ender_chest` is always single.
+
+*   `Head`: the mob's vanilla head model from its entity texture (3): an 8x8x8 head; zombie and
+    player add a hat layer 0.25 larger; piglin is a 10x8x8 head with snout and tusks, without
+    ears; the dragon is upper head, upper lip, closed jaw, scales and nostrils at 3/4 scale, with
+    the snout reaching outside the cell. A floor head stands on the floor, its face north at
+    `rotation=0`, turned clockwise from above in 22.5° steps. A wall head is a quarter block up,
+    against the wall opposite `facing`, its face towards `facing`. Player heads show the default
+    skin.
+*   `Bed`: the half named by `part`, a 16x16x6 mattress 3 to 9 units up with two 3x3x3 legs at its
+    far end, from the colour's bed atlas. The head half's pillow points `facing`. The mattress
+    end each half shares with the other is not drawn.
+*   `Conduit`: an inactive conduit's 6x6x6 shell at the centre of the cell, from the `base` atlas.
+
+Entity-model boxes are placed as vanilla's renderer places them, Y down in the model, and each
+face draws the tile of the unwrapped face that lands there, with the UV orientation and rotation
+vanilla's `ModelPart` gives it.
 
 `bell` has geometry for its frame only. Its body (6x7x6) and lip (8x2x8) are added as a further
 part, unrotated, from the `bell_top`, `bell_side` and `bell_bottom` textures.
@@ -282,7 +314,7 @@ when the world is marked dirty.
     only unreached space, and geometry inside it, are skipped. Limited to
     `Config::MAX_CAVITY_FLOOD_CELLS`; larger structures use neighbour culling only.
 *   `Block::occlusion_mask` gives the sides a block fully hides. `Invisible`, `BlockEntity`, `Sign`,
-    `Banner` and `Chest` hide nothing.
+    `Banner`, `Chest`, `Head`, `Bed` and `Conduit` hide nothing.
 
 ---
 
@@ -342,6 +374,8 @@ the world with it.
 *   The right panel lists each block once, by blockstate key, whatever its variants.
 *   Selecting a block lists its states (4.2) and starts on an unrotated variant, or for a
     multipart block the first combination that draws a model.
+*   Properties hand-built geometry reads but the blockstate file does not list multiply the
+    states, default value first: beds list `part=foot` and `part=head`.
 *   **Tab** moves to the next variant and **Shift+Tab** to the previous, wrapping. Both are
     ignored while a text field has keyboard focus.
 *   The hotbar shows the block, the current variant and its position (`3/40`) on the left, and

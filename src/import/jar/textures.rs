@@ -7,14 +7,14 @@ use std::path::{Path, PathBuf};
 use image::RgbaImage;
 
 use crate::config::Config;
-use crate::constants::CHEST_ATLAS_SIZE;
-use crate::models::chest::ChestHalf;
+use crate::constants::ENTITY_TEXTURE_DIR;
+use crate::models::entity_model::{EntityAtlas, entity_atlas};
 use crate::textures::{ImageFormat, Texture, inspect_alpha};
 
 use super::{JarError, for_each_jar_file};
 
 /// Extracts `assets/{namespace}/textures/block/*.{png,bmp,jpg}` into `cache_dir`,
-/// plus the tiles cut from `textures/entity/chest/*.png`.
+/// plus the tiles cut from the entity atlases the editor draws blocks from.
 ///
 /// Each block texture is written under its original file name. The returned map is keyed
 /// by file stem (e.g. `glass`).
@@ -25,8 +25,8 @@ pub fn extract_from_jar(
     fs::create_dir_all(cache_dir)?;
     let mut textures = HashMap::new();
     for_each_jar_file(jar_path, |name, bytes| {
-        if let Some(stem) = match_chest_atlas(name) {
-            textures.extend(ingest_chest_atlas(cache_dir, &stem, &bytes));
+        if let Some((path, atlas)) = match_entity_atlas(name) {
+            textures.extend(ingest_entity_atlas(cache_dir, &path, &atlas, &bytes));
         }
         let Some((file_name, format)) = match_block_texture(name) else {
             return;
@@ -74,11 +74,23 @@ pub(crate) fn match_block_texture(entry_name: &str) -> Option<(String, ImageForm
     match_texture(entry_name, &["block"])
 }
 
-/// Matches `assets/{namespace}/textures/entity/chest/{file}.png`, returning
-/// the file stem (`normal_left`).
-pub(crate) fn match_chest_atlas(entry_name: &str) -> Option<String> {
-    let (file_name, format) = match_texture(entry_name, &["entity", "chest"])?;
-    (format == ImageFormat::Png).then(|| file_stem(&file_name))
+/// Matches `assets/{namespace}/textures/entity/{path}.png` when it is an
+/// atlas the editor cuts into tiles, returning the path under `textures/`
+/// (`entity/chest/normal_left`) and the atlas.
+pub(crate) fn match_entity_atlas(entry_name: &str) -> Option<(String, EntityAtlas)> {
+    let name = entry_name.replace('\\', "/");
+    let mut parts = name.splitn(4, '/');
+    let (assets, namespace, textures, rest) =
+        (parts.next()?, parts.next()?, parts.next()?, parts.next()?);
+    if assets != "assets" || namespace.is_empty() || textures != "textures" {
+        return None;
+    }
+    let path = rest.strip_suffix(".png")?;
+    if !path.starts_with(ENTITY_TEXTURE_DIR) || path.contains("..") {
+        return None;
+    }
+    let atlas = entity_atlas(path)?;
+    Some((path.to_owned(), atlas))
 }
 
 /// Matches an image file directly inside `assets/{namespace}/textures/{dirs}/`.
@@ -112,28 +124,30 @@ fn match_texture(entry_name: &str, dirs: &[&str]) -> Option<(String, ImageFormat
     Some((file.to_owned(), format))
 }
 
-/// Cuts a chest atlas into one tile per drawn box face and writes each into
-/// `cache_dir`, at the top-left of a square the size of a block texture so a
-/// tile's texels line up with model units. Returns `(key, record)` per tile.
-pub(crate) fn ingest_chest_atlas(
+/// Cuts the entity texture at `path` into one tile per drawn box face and
+/// writes each into `cache_dir`, at the top-left of a square the size of a
+/// block texture so a tile's texels line up with model units. Returns
+/// `(key, record)` per tile.
+pub(crate) fn ingest_entity_atlas(
     cache_dir: &Path,
-    stem: &str,
+    path: &str,
+    layout: &EntityAtlas,
     bytes: &[u8],
 ) -> Vec<(String, Texture)> {
     let atlas = match image::load_from_memory_with_format(bytes, image::ImageFormat::Png) {
         Ok(image) => image.to_rgba8(),
         Err(err) => {
-            log::warn!("failed to decode chest texture {stem}: {err}");
+            log::warn!("failed to decode entity texture {path}: {err}");
             return Vec::new();
         }
     };
-    let scale = (atlas.width() / CHEST_ATLAS_SIZE).max(1);
+    let scale = (atlas.width() / layout.size).max(1);
     let side = Config::TEXTURE_SIZE * scale;
     let mut textures = Vec::new();
-    for tile in ChestHalf::from_atlas(stem).tiles(stem) {
+    for tile in &layout.tiles {
         let [x, y, width, height] = tile.region.map(|v| v * scale);
         if x + width > atlas.width() || y + height > atlas.height() {
-            log::warn!("chest texture {stem} is too small for {}", tile.key);
+            log::warn!("entity texture {path} is too small for {}", tile.key);
             continue;
         }
         let mut canvas = RgbaImage::new(side, side);
@@ -260,15 +274,20 @@ mod tests {
     }
 
     #[test]
-    fn match_chest_atlas_accepts_only_the_chest_directory() {
+    fn match_entity_atlas_accepts_only_atlases_the_editor_cuts() {
+        let path = |name: &str| match_entity_atlas(name).map(|(path, _)| path);
         assert_eq!(
-            match_chest_atlas("assets/minecraft/textures/entity/chest/normal_left.png").as_deref(),
-            Some("normal_left")
+            path("assets/minecraft/textures/entity/chest/normal_left.png").as_deref(),
+            Some("entity/chest/normal_left")
         );
-        assert!(
-            match_chest_atlas("assets/minecraft/textures/entity/creeper/creeper.png").is_none()
+        assert_eq!(
+            path("assets/minecraft/textures/entity/player/wide/steve.png").as_deref(),
+            Some("entity/player/wide/steve")
         );
-        assert!(match_chest_atlas("assets/minecraft/textures/block/chest.png").is_none());
+        assert!(path("assets/minecraft/textures/entity/creeper/creeper.png").is_some());
+        assert!(path("assets/minecraft/textures/entity/skeleton/stray.png").is_none());
+        assert!(path("assets/minecraft/textures/entity/conduit/wind.png.mcmeta").is_none());
+        assert!(path("assets/minecraft/textures/block/chest.png").is_none());
         assert!(match_block_texture("assets/minecraft/textures/entity/chest/normal.png").is_none());
     }
 
@@ -282,7 +301,9 @@ mod tests {
             .write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)
             .unwrap();
 
-        let textures: HashMap<String, Texture> = ingest_chest_atlas(&dir, "normal", &bytes)
+        let (path, layout) =
+            match_entity_atlas("assets/minecraft/textures/entity/chest/normal.png").unwrap();
+        let textures: HashMap<String, Texture> = ingest_entity_atlas(&dir, &path, &layout, &bytes)
             .into_iter()
             .collect();
         assert_eq!(textures.len(), 15);
@@ -298,7 +319,7 @@ mod tests {
         assert_eq!(tile.get_pixel(14, 0).0[3], 0);
         assert_eq!(tile.get_pixel(0, 5).0[3], 0);
 
-        assert!(ingest_chest_atlas(&dir, "normal", b"not a png").is_empty());
+        assert!(ingest_entity_atlas(&dir, &path, &layout, b"not a png").is_empty());
         fs::remove_dir_all(dir).ok();
     }
 

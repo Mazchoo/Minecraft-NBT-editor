@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 
 use super::element::Element;
 use super::sign::{facing_yaw, rotation_yaw, wood_box};
+use crate::constants::DEFAULT_DYE_COLOUR;
 use crate::custom_block_keys::CustomBlockKey;
 
 /// Vanilla scales the banner entity model by 2/3.
@@ -125,7 +126,7 @@ pub(crate) fn flag_texture(name: &str) -> String {
     let color = CustomBlockKey::from_name(name)
         .and_then(|key| key.member(name))
         .filter(|color| !color.is_empty())
-        .unwrap_or("white");
+        .unwrap_or(DEFAULT_DYE_COLOUR);
     format!("{color}_wool")
 }
 

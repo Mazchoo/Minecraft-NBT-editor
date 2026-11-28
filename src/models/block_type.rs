@@ -3,6 +3,7 @@
 use super::banner::BannerKind;
 use super::block::BasicBlock;
 use super::chest::ChestKind;
+use super::head::HeadKind;
 use super::sign::SignKind;
 use crate::custom_block_keys::CustomBlockKey;
 
@@ -20,6 +21,12 @@ pub enum BlockType {
     Banner(BannerKind),
     /// A chest: no model geometry, drawn from hand-built boxes.
     Chest(ChestKind),
+    /// A mob head: no model geometry, drawn from hand-built boxes.
+    Head(HeadKind),
+    /// One half of a bed: no model geometry, drawn from hand-built boxes.
+    Bed,
+    /// A conduit: no model geometry, drawn from a hand-built box.
+    Conduit,
     /// No geometry anywhere in the model chain: drawn as an inset placeholder.
     BlockEntity,
     /// Deliberately draws nothing: air, barrier, structure void.
@@ -40,10 +47,19 @@ impl BlockType {
             if let Some(kind) = BannerKind::from_name(name) {
                 return Self::Banner(kind);
             }
-            return match ChestKind::from_name(name) {
-                Some(kind) => Self::Chest(kind),
-                None => Self::BlockEntity,
-            };
+            if let Some(kind) = ChestKind::from_name(name) {
+                return Self::Chest(kind);
+            }
+            if let Some(kind) = HeadKind::from_name(name) {
+                return Self::Head(kind);
+            }
+            if super::bed::is_bed(name) {
+                return Self::Bed;
+            }
+            if super::conduit::is_conduit(name) {
+                return Self::Conduit;
+            }
+            return Self::BlockEntity;
         }
         match parent_stem.and_then(BasicBlock::from_parent) {
             Some(basic) => Self::Basic(basic),
@@ -87,6 +103,21 @@ mod tests {
         assert_eq!(
             BlockType::classify("minecraft:red_wall_banner", None, false),
             BlockType::Banner(BannerKind::Wall)
+        );
+        assert_eq!(
+            BlockType::classify("minecraft:dragon_wall_head", None, false),
+            BlockType::Head(HeadKind {
+                mob: crate::models::head::HeadMob::Dragon,
+                wall: true
+            })
+        );
+        assert_eq!(
+            BlockType::classify("minecraft:lime_bed", None, false),
+            BlockType::Bed
+        );
+        assert_eq!(
+            BlockType::classify("minecraft:conduit", None, false),
+            BlockType::Conduit
         );
         assert_eq!(
             BlockType::classify("minecraft:stone", Some("cube_all"), true),

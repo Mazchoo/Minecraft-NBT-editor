@@ -240,16 +240,42 @@ impl ModelLibrary {
 
     /// Every state `block` can be placed in, as property maps, and the index
     /// of the one a newly picked block starts in. A block without a
-    /// definition has only its default state.
+    /// definition has only its default state. Properties the editor's own
+    /// geometry reads and the definition does not list
+    /// ([`CustomBlockKey::unlisted_properties`]) multiply the states.
     pub fn variants(&self, block: &str) -> (Vec<BTreeMap<String, String>>, usize) {
-        let Some(definition) = self.definitions.get(block) else {
-            return (vec![BTreeMap::new()], 0);
+        let definition = self.definitions.get(block);
+        let (mut variants, mut start) = match definition {
+            Some(definition) => {
+                let variants = definition.variants(Config::MAX_BLOCK_VARIANTS);
+                let start = definition.default_variant(&variants);
+                (variants, start)
+            }
+            None => (Vec::new(), 0),
         };
-        let mut variants = definition.variants(Config::MAX_BLOCK_VARIANTS);
         if variants.is_empty() {
             variants.push(BTreeMap::new());
         }
-        let start = definition.default_variant(&variants);
+        let unlisted =
+            CustomBlockKey::from_name(block).map_or(&[][..], |key| key.unlisted_properties());
+        for &(property, values) in unlisted {
+            if definition.is_some_and(|definition| definition.mentions(property)) {
+                continue;
+            }
+            start *= values.len();
+            variants = variants
+                .iter()
+                .flat_map(|base| {
+                    values.iter().map(move |value| {
+                        let mut next = base.clone();
+                        next.insert(property.to_owned(), (*value).to_owned());
+                        next
+                    })
+                })
+                .take(Config::MAX_BLOCK_VARIANTS)
+                .collect();
+        }
+        let start = start.min(variants.len() - 1);
         (variants, start)
     }
 
@@ -993,6 +1019,17 @@ mod tests {
     }
 
     #[test]
+    fn bed_halves_are_variants_its_definition_does_not_list() {
+        let dir = temp_dir("model-library-bed");
+        write_model_cache(&dir);
+        let library = ModelLibrary::from_cache_dir(&dir);
+        let (variants, start) = library.variants("red_bed");
+        assert_eq!(variants, [props("part", "foot"), props("part", "head")]);
+        assert_eq!(start, 0);
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
     fn definitions_reload_when_their_manifest_appears() {
         let dir = temp_dir("model-library-definitions-reload");
         write_model_cache(&dir);
@@ -1003,5 +1040,20 @@ mod tests {
         assert_eq!(library.block_names(), ["pair", "pebble"]);
         assert!(!library.reload_if_changed());
         fs::remove_dir_all(dir).ok();
+    }
+}
+
+#[cfg(test)]
+mod chorus_variants_probe {
+    use super::*;
+    #[test]
+    fn probe() {
+        let library = ModelLibrary::from_cache_dir(std::path::Path::new("C:/Users/CYBORG/AppData/Local/Temp/claude/c60e44214406c637/aea74248-9cbc-4aec-9eac-7bf90a798abd/scratchpad/mc"));
+        for name in ["chorus_plant", "minecraft:chorus_plant"] {
+            let (variants, start) = library.variants(name);
+            println!("PROBE {name}: {} variants, start {start}", variants.len());
+            for v in variants.iter().take(3) { println!("PROBE   {v:?}"); }
+        }
+        println!("PROBE names contain chorus_plant: {}", library.block_names().iter().any(|n| n.as_str() == "chorus_plant"));
     }
 }

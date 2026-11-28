@@ -237,10 +237,10 @@ impl StateRotation {
         if let Some(facing) = properties.get(crate::constants::FACING_PROPERTY) {
             return match facing.as_str() {
                 "down" => Self { x: 180, y: 0 },
-                "south" => Self { x: 90, y: 0 },
-                "west" => Self { x: 90, y: 90 },
-                "north" => Self { x: 90, y: 180 },
-                "east" => Self { x: 90, y: 270 },
+                "north" => Self { x: 90, y: 0 },
+                "east" => Self { x: 90, y: 90 },
+                "south" => Self { x: 90, y: 180 },
+                "west" => Self { x: 90, y: 270 },
                 _ => Self::IDENTITY,
             };
         }
@@ -257,10 +257,12 @@ impl StateRotation {
 }
 
 fn rotate_x_steps(p: Vec3, degrees: u16) -> Vec3 {
+    // Matching Minecraft's model `x` rotation: 90 turns north to down and up
+    // to north, as [`Face::rotate`] does.
     match degrees % 360 {
-        90 => Vec3::new(p.x, -p.z, p.y),
+        90 => Vec3::new(p.x, p.z, -p.y),
         180 => Vec3::new(p.x, -p.y, -p.z),
-        270 => Vec3::new(p.x, p.z, -p.y),
+        270 => Vec3::new(p.x, -p.z, p.y),
         _ => p,
     }
 }
@@ -371,6 +373,23 @@ mod tests {
             StateRotation::from_properties(&props),
             StateRotation::new(90, 90)
         );
+    }
+
+    #[test]
+    fn x_rotation_matches_face_rotation() {
+        for x in [90, 180, 270] {
+            let rotation = StateRotation::new(x, 0);
+            for face in Face::ALL {
+                assert_eq!(
+                    face.after_geometry_rotation(rotation),
+                    face.rotate(rotation)
+                );
+            }
+        }
+        // `x: 90` hangs a north-pointing arm downwards (chorus plant `down`).
+        let rotation = StateRotation::new(90, 0);
+        assert_eq!(Face::North.after_geometry_rotation(rotation), Face::Down);
+        assert_eq!(Face::Up.after_geometry_rotation(rotation), Face::North);
     }
 
     #[test]
